@@ -7,6 +7,7 @@ var day: int = 0
 var money: int = 0
 var stock: Dictionary = {}     # component_id -> quantity
 var facilities: Array = []     # facility instances, see Simulation._new_facility
+var technicians_hired: int = 0
 var next_facility_id: int = 1
 var pending_orders: Array = [] # orders in transit, see Simulation._apply_order
 var next_order_id: int = 1
@@ -19,6 +20,7 @@ func to_dict() -> Dictionary:
 		"money": money,
 		"stock": stock.duplicate(true),
 		"facilities": facilities.duplicate(true),
+		"technicians_hired": technicians_hired,
 		"next_facility_id": next_facility_id,
 		"pending_orders": pending_orders.duplicate(true),
 		"next_order_id": next_order_id,
@@ -36,6 +38,7 @@ static func from_dict(d: Dictionary) -> GameState:
 		# JSON turns ints into floats: recast.
 		for key in ["id", "ready_day", "assigned"]:
 			facility[key] = int(facility[key])
+	s.technicians_hired = int(d["technicians_hired"])
 	s.next_facility_id = int(d["next_facility_id"])
 	s.pending_orders = d["pending_orders"].duplicate(true)
 	s.next_order_id = int(d["next_order_id"])

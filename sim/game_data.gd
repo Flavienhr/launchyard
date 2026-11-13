@@ -7,13 +7,15 @@ var components: Dictionary = {}  # id -> Dictionary
 var suppliers: Dictionary = {}   # id -> Dictionary
 var facilities: Dictionary = {}  # id -> Dictionary
 var start: Dictionary = {}       # starting conditions
+var staff: Dictionary = {}       # staff.json: "technician" block, max_queue_length
 
 
 static func from_dicts(
 		components_list: Array,
 		suppliers_list: Array,
 		facilities_list: Array,
-		start_dict: Dictionary) -> GameData:
+		start_dict: Dictionary,
+		staff_dict: Dictionary = {}) -> GameData:
 	var data := GameData.new()
 	for c in components_list:
 		data.components[c["id"]] = c
@@ -22,6 +24,7 @@ static func from_dicts(
 	for f in facilities_list:
 		data.facilities[f["id"]] = f
 	data.start = start_dict
+	data.staff = staff_dict
 	return data
 
 

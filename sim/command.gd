@@ -5,6 +5,9 @@ extends RefCounted
 
 const ORDER := &"order"
 const BUILD := &"build"
+const HIRE := &"hire"
+const FIRE := &"fire"
+const ASSIGN_STAFF := &"assign_staff"
 
 var type: StringName
 var args: Dictionary
@@ -25,6 +28,18 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 
 static func build(facility_type: String) -> Command:
 	return Command.new(BUILD, {"facility_type": facility_type})
+
+
+static func hire(count: int) -> Command:
+	return Command.new(HIRE, {"count": count})
+
+
+static func fire(count: int) -> Command:
+	return Command.new(FIRE, {"count": count})
+
+
+static func assign_staff(facility_id: int, count: int) -> Command:
+	return Command.new(ASSIGN_STAFF, {"facility_id": facility_id, "count": count})
 
 
 func to_dict() -> Dictionary:
