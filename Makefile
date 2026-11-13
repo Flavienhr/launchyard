@@ -4,7 +4,7 @@ PYTHON := .venv/bin/python
 PRESET ?= Linux
 OUT ?= build/linux/launchyard.x86_64
 
-.PHONY: setup import test validate assets balance export run check
+.PHONY: setup import test validate assets balance export run check playthrough
 
 setup: ## Crée le venv Python des outils
 	python3 -m venv .venv
@@ -23,6 +23,10 @@ assets: ## Vérifie les SVG sources (Godot les importe nativement)
 	@$(PYTHON) tools/lint_assets.py
 
 check: validate assets test ## Tout ce que la CI vérifie
+
+SEED ?= 1
+playthrough: import ## Joue une partie scriptée « tout acheter » sur les vraies données
+	@$(GODOT) --headless --path . -s tests/playthrough.gd -- $(SEED)
 
 balance: ## Simulation d'équilibrage (phase 2)
 	@echo "TODO phase 2 : simuler N parties en headless et produire un rapport" && exit 1
