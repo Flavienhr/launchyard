@@ -14,12 +14,13 @@ var sites: Dictionary = {}       # id -> Dictionary (sites.json)
 var launchers: Dictionary = {}   # model id -> Dictionary (launchers.json)
 var contracts: Dictionary = {}   # contracts.json (spec 002)
 var active_site_id: String = ""  # site of the game; see active_site()
+var rules: Dictionary = {}       # rules.json (spec 004: bankruptcy); empty = rule off
 
 
 ## Files made of records with an "id" (file content: {"<stem>": [records]}).
 const INDEXED_FILES := ["components", "suppliers", "facilities", "recipes", "orbits", "sites", "launchers"]
 ## Files used as a whole object.
-const WHOLE_FILES := ["start", "staff", "contracts"]
+const WHOLE_FILES := ["start", "staff", "contracts", "rules"]
 
 
 ## Builds GameData from parsed data files keyed by stem (e.g. "components"),
