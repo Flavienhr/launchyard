@@ -62,6 +62,8 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_reschedule_launch(state, command.args)
 		Command.CANCEL_LAUNCH:
 			return _apply_cancel_launch(state, command.args)
+		Command.ACCEPT_CONTRACT:
+			return _apply_accept_contract(state, command.args, data)
 	return [_rejected("unknown_command", command)]
 
 
@@ -349,6 +351,27 @@ static func start_refurbishment(pad: Dictionary, until_day: int) -> void:
 	pad["launcher_id"] = 0
 
 
+## Spec 002 R3. Checks in spec order; the advance is credited immediately.
+static func _apply_accept_contract(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var command := Command.new(Command.ACCEPT_CONTRACT, args)
+	var contract := ContractRules.find(state, int(args.get("contract_id", 0)))
+	if contract.is_empty() or contract["status"] != ContractRules.OFFER:
+		return [_rejected("not_an_offer", command)]
+	if ContractRules.active_count(state) >= int(data.contracts["max_active_contracts"]):
+		return [_rejected("too_many_contracts", command)]
+	var site := data.active_site()
+	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
+	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
+		return [_rejected("orbit_unreachable", command)]
+	if int(contract["payload_kg"]) > ContractRules.best_capacity(data, contract["orbit"], site):
+		return [_rejected("payload_too_heavy", command)]
+	contract["status"] = ContractRules.ACTIVE
+	state.money += int(contract["advance"])
+	return [_event("contract_accepted", {
+		"contract_id": contract["id"], "advance": contract["advance"],
+	})]
+
+
 static func _find_facility(state: GameState, facility_id: int) -> Dictionary:
 	for facility in state.facilities:
 		if facility["id"] == facility_id:
@@ -382,6 +405,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_production(state, data))
 	events.append_array(_resolve_pads(state))
 	events.append_array(_resolve_market(state, data))
+	events.append_array(_resolve_contract_deadlines(state, data))
 	events.append_array(_resolve_finances(state, data))
 	state.day += 1
 	return events
@@ -557,6 +581,70 @@ static func _add_offer(state: GameState, rng: RandomNumberGenerator, data: GameD
 	state.next_contract_id += 1
 	state.contracts.append(offer)
 	return offer
+
+
+## Step 8 (spec 002 R4): active contracts whose deadline day is over fail.
+## Launches (step 5) run before, so a success on deadline_day still counts.
+static func _resolve_contract_deadlines(state: GameState, data: GameData) -> Array:
+	var events: Array = []
+	if data.contracts.is_empty():
+		return events
+	for contract in state.contracts:  # ascending id: stable order
+		if contract["status"] == ContractRules.ACTIVE and contract["deadline_day"] <= state.day:
+			events.append_array(fail_contract(state, data, contract["id"], ContractRules.DEADLINE_MISSED))
+	return events
+
+
+## Public entry point for spec 003 (successful launch). Pays the balance
+## (payment - advance), marks the contract completed, applies rep_on_success.
+## No-op ([]) if the contract is not active.
+static func complete_contract(state: GameState, data: GameData, contract_id: int) -> Array:
+	var contract := ContractRules.find(state, contract_id)
+	if contract.is_empty() or contract["status"] != ContractRules.ACTIVE:
+		return []
+	var balance := int(contract["payment"]) - int(contract["advance"])
+	state.money += balance
+	contract["status"] = ContractRules.COMPLETED
+	var events: Array = [_event("contract_completed", {
+		"contract_id": contract_id, "balance_paid": balance,
+	})]
+	events.append(_change_reputation(state, data, int(data.contracts["rep_on_success"])))
+	return events
+
+
+## Public entry point for spec 003 (launcher failure) and the deadline rule.
+## launch_failed: advance kept, no penalty. deadline_missed: advance refunded
+## plus penalty. No-op ([]) if the contract is not active or the reason unknown.
+static func fail_contract(state: GameState, data: GameData, contract_id: int, reason: String) -> Array:
+	var contract := ContractRules.find(state, contract_id)
+	if contract.is_empty() or contract["status"] != ContractRules.ACTIVE:
+		return []
+	var debited := 0
+	var rep_delta := 0
+	match reason:
+		ContractRules.LAUNCH_FAILED:
+			rep_delta = int(data.contracts["rep_on_launch_failure"])
+		ContractRules.DEADLINE_MISSED:
+			debited = int(contract["advance"]) + int(contract["penalty"])
+			rep_delta = int(data.contracts["rep_on_deadline_missed"])
+		_:
+			return []
+	state.money -= debited  # may go negative, like severance
+	contract["status"] = ContractRules.FAILED
+	var events: Array = [_event("contract_failed", {
+		"contract_id": contract_id, "reason": reason, "amount_debited": debited,
+	})]
+	events.append(_change_reputation(state, data, rep_delta))
+	return events
+
+
+## Applies `delta` clamped (R5); the event carries the delta actually applied.
+static func _change_reputation(state: GameState, data: GameData, delta: int) -> Dictionary:
+	var before := state.reputation
+	state.reputation = ContractRules.clamp_reputation(data, before + delta)
+	return _event("reputation_changed", {
+		"delta": state.reputation - before, "reputation": state.reputation,
+	})
 
 
 static func _resolve_finances(state: GameState, data: GameData) -> Array:

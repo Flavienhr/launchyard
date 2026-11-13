@@ -13,6 +13,7 @@ const CANCEL_JOB := &"cancel_job"
 const SCHEDULE_LAUNCH := &"schedule_launch"
 const RESCHEDULE_LAUNCH := &"reschedule_launch"
 const CANCEL_LAUNCH := &"cancel_launch"
+const ACCEPT_CONTRACT := &"accept_contract"
 
 var type: StringName
 var args: Dictionary
@@ -70,6 +71,10 @@ static func reschedule_launch(launch_id: int, launch_day: int) -> Command:
 
 static func cancel_launch(launch_id: int) -> Command:
 	return Command.new(CANCEL_LAUNCH, {"launch_id": launch_id})
+
+
+static func accept_contract(contract_id: int) -> Command:
+	return Command.new(ACCEPT_CONTRACT, {"contract_id": contract_id})
 
 
 func to_dict() -> Dictionary:
