@@ -14,7 +14,7 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 	state.game_seed = game_seed
 	state.money = int(data.start["money"])
 	for type in data.start["facilities"]:
-		state.facilities.append(_new_facility(state, type, "ready", state.day))
+		state.facilities.append(_new_facility(state, type, "ready", state.day, data))
 	state.technicians_hired = int(data.start.get("technicians", 0))
 	var assignments: Dictionary = data.start.get("assignments", {})
 	for type in assignments:
@@ -56,6 +56,12 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_queue_job(state, command.args, data)
 		Command.CANCEL_JOB:
 			return _apply_cancel_job(state, command.args)
+		Command.SCHEDULE_LAUNCH:
+			return _apply_schedule_launch(state, command.args, data)
+		Command.RESCHEDULE_LAUNCH:
+			return _apply_reschedule_launch(state, command.args)
+		Command.CANCEL_LAUNCH:
+			return _apply_cancel_launch(state, command.args)
 		Command.ACCEPT_CONTRACT:
 			return _apply_accept_contract(state, command.args, data)
 	return [_rejected("unknown_command", command)]
@@ -108,7 +114,7 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 		return [_rejected("insufficient_funds", command)]
 
 	state.money -= cost
-	var instance := _new_facility(state, type, "building", state.day + int(def["build_days"]))
+	var instance := _new_facility(state, type, "building", state.day + int(def["build_days"]), data)
 	state.facilities.append(instance)
 	return [_event("facility_build_started", {
 		"facility_id": instance["id"], "type": type, "cost": cost, "ready_day": instance["ready_day"],
@@ -222,6 +228,129 @@ static func _apply_cancel_job(state: GameState, args: Dictionary) -> Array:
 	return [_rejected("unknown_job", command)]
 
 
+# --- Launch scheduling (spec 003 R2) ----------------------------------------
+
+## Pad states (facility "pad_state", separate from the build "status" which stays
+## building/ready): "free", "occupied" = a launcher stands on it,
+## "refurbishing" = unavailable until refurb_until_day.
+const PAD_FREE := "free"
+const PAD_OCCUPIED := "occupied"
+const PAD_REFURBISHING := "refurbishing"
+
+
+## A launch pad is a facility type that defines a rollout duration.
+static func is_pad(facility: Dictionary, data: GameData) -> bool:
+	return data.facilities[facility["type"]].has("rollout_days")
+
+
+static func _find_by_id(items: Array, id: int) -> Dictionary:
+	for item in items:
+		if item["id"] == id:
+			return item
+	return {}
+
+
+static func _launch_for(state: GameState, key: String, id: int) -> Dictionary:
+	for launch in state.launches:
+		if launch[key] == id:
+			return launch
+	return {}
+
+
+static func _apply_schedule_launch(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var command := Command.new(Command.SCHEDULE_LAUNCH, args)
+	var launcher := _find_by_id(state.launchers, int(args.get("launcher_id", 0)))
+	var pad := _find_facility(state, int(args.get("pad_id", 0)))
+	var contract := _find_by_id(state.contracts, int(args.get("contract_id", 0)))
+	var launch_day := int(args.get("launch_day", 0))
+	if launcher.is_empty() or not _launch_for(state, "launcher_id", launcher["id"]).is_empty():
+		return [_rejected("launcher_unavailable", command)]
+	if pad.is_empty() or not is_pad(pad, data):
+		return [_rejected("pad_unavailable", command)]
+	var on_pad: bool = pad["launcher_id"] == launcher["id"]
+	if pad["status"] != "ready":
+		return [_rejected("pad_unavailable", command)]  # still under construction
+	if not (pad["pad_state"] == PAD_FREE or (pad["pad_state"] == PAD_OCCUPIED and on_pad)):
+		return [_rejected("pad_unavailable", command)]
+	if not on_pad and _is_on_a_pad(state, data, launcher):
+		return [_rejected("pad_unavailable", command)]  # no moving between pads in phase 2
+	if contract.is_empty() or contract["status"] != ContractRules.ACTIVE \
+			or not _launch_for(state, "contract_id", contract["id"]).is_empty():
+		return [_rejected("contract_unavailable", command)]
+	var site := data.active_site()
+	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
+	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
+		return [_rejected("orbit_unreachable", command)]
+	var model: Dictionary = data.launchers.get(launcher["model"], {})
+	if int(contract["payload_kg"]) > LaunchRules.payload_capacity(model, contract["orbit"], site):
+		return [_rejected("payload_too_heavy", command)]
+	var lead := 1 if on_pad else int(data.facilities[pad["type"]]["rollout_days"])
+	if launch_day < state.day + lead:
+		return [_rejected("too_early", command)]
+	if launch_day > int(contract["deadline_day"]):
+		return [_rejected("after_deadline", command)]
+
+	launcher["location_facility_id"] = pad["id"]  # leaves the hall now (decision 4)
+	pad["pad_state"] = PAD_OCCUPIED
+	pad["launcher_id"] = launcher["id"]
+	var launch := {
+		"id": state.next_launch_id, "launcher_id": launcher["id"], "pad_id": pad["id"],
+		"contract_id": contract["id"], "launch_day": launch_day, "scrubs": 0,
+	}
+	state.next_launch_id += 1
+	state.launches.append(launch)
+	return [_event("launch_scheduled", {"launch_id": launch["id"], "launch_day": launch_day})]
+
+
+static func _is_on_a_pad(state: GameState, data: GameData, launcher: Dictionary) -> bool:
+	var location := _find_facility(state, int(launcher["location_facility_id"]))
+	return not location.is_empty() and is_pad(location, data)
+
+
+static func _apply_reschedule_launch(state: GameState, args: Dictionary) -> Array:
+	var command := Command.new(Command.RESCHEDULE_LAUNCH, args)
+	var launch := _find_by_id(state.launches, int(args.get("launch_id", 0)))
+	var launch_day := int(args.get("launch_day", 0))
+	if launch.is_empty():
+		return [_rejected("unknown_launch", command)]
+	if launch_day < state.day + 1:
+		return [_rejected("too_early", command)]
+	var contract := _find_by_id(state.contracts, launch["contract_id"])
+	if launch_day > int(contract["deadline_day"]):
+		return [_rejected("after_deadline", command)]
+	launch["launch_day"] = launch_day
+	return [_event("launch_rescheduled", {"launch_id": launch["id"], "launch_day": launch_day})]
+
+
+## The launcher stays on its pad (no return to the hall in phase 2).
+static func _apply_cancel_launch(state: GameState, args: Dictionary) -> Array:
+	var launch_id := int(args.get("launch_id", 0))
+	for i in state.launches.size():
+		if state.launches[i]["id"] == launch_id:
+			var launch: Dictionary = state.launches[i]
+			state.launches.remove_at(i)
+			return [_event("launch_cancelled", {"launch_id": launch_id, "launch_day": launch["launch_day"]})]
+	return [_rejected("unknown_launch", Command.new(Command.CANCEL_LAUNCH, args))]
+
+
+## Step 5, first part (spec 003 R5): pads whose refurbishment ends tomorrow
+## become free again, before the day's launches. Resolved as of tomorrow, like deliveries.
+static func _resolve_pads(state: GameState) -> Array:
+	var events: Array = []
+	for facility in state.facilities:
+		if facility.get("pad_state") == PAD_REFURBISHING and facility["refurb_until_day"] <= state.day + 1:
+			facility["pad_state"] = PAD_FREE
+			events.append(_event("pad_ready", {"pad_id": facility["id"]}))
+	return events
+
+
+## Puts a pad into refurbishment until `until_day` (used by launch resolution, issue #15).
+static func start_refurbishment(pad: Dictionary, until_day: int) -> void:
+	pad["pad_state"] = PAD_REFURBISHING
+	pad["refurb_until_day"] = until_day
+	pad["launcher_id"] = 0
+
+
 ## Spec 002 R3. Checks in spec order; the advance is credited immediately.
 static func _apply_accept_contract(state: GameState, args: Dictionary, data: GameData) -> Array:
 	var command := Command.new(Command.ACCEPT_CONTRACT, args)
@@ -250,7 +379,7 @@ static func _find_facility(state: GameState, facility_id: int) -> Dictionary:
 	return {}
 
 
-static func _new_facility(state: GameState, type: String, status: String, ready_day: int) -> Dictionary:
+static func _new_facility(state: GameState, type: String, status: String, ready_day: int, data: GameData) -> Dictionary:
 	var instance := {
 		"id": state.next_facility_id,
 		"type": type,
@@ -258,7 +387,11 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 		"ready_day": ready_day,
 		"assigned": 0,  # technicians assigned (spec 001 R4)
 		"jobs": [],     # job queue, see _apply_queue_job (head = active job)
+		"launcher_id": 0,       # launch pads: launcher standing on the pad (0 = none), spec 003 R2
+		"refurb_until_day": 0,  # launch pads: first day available again after refurbishment (R5)
 	}
+	if data.facilities[type].has("rollout_days"):
+		instance["pad_state"] = PAD_FREE  # pads only; "status" stays building/ready
 	state.next_facility_id += 1
 	return instance
 
@@ -270,6 +403,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_deliveries(state, data))
 	events.append_array(_resolve_constructions(state))
 	events.append_array(_resolve_production(state, data))
+	events.append_array(_resolve_pads(state))
 	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_contract_deadlines(state, data))
 	events.append_array(_resolve_finances(state, data))
