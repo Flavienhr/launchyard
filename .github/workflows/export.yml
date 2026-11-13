@@ -1,0 +1,52 @@
+name: Export
+
+# Workflow réutilisable : exporte les 3 OS et publie les builds comme artifacts.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: "dev"
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.2"
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: Linux
+            out: build/linux/launchyard.x86_64
+          - preset: Windows
+            out: build/windows/launchyard.exe
+          - preset: macOS
+            out: build/macos/launchyard.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          templates: "true"
+      - run: make export PRESET="${{ matrix.preset }}" OUT="${{ matrix.out }}"
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          NAME="launchyard-${{ inputs.version }}-${{ matrix.preset }}"
+          if [ "${{ matrix.preset }}" = "macOS" ]; then
+            cp "${{ matrix.out }}" "dist/$NAME.zip"
+          else
+            (cd "$(dirname "${{ matrix.out }}")" && zip -qr "$GITHUB_WORKSPACE/dist/$NAME.zip" .)
+          fi
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launchyard-${{ matrix.preset }}
+          path: dist/*.zip
+          retention-days: 14

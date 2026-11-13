@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "facilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "facilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "upkeep_per_day"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "upkeep_per_day": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "storage_capacity": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "patternProperties": {
+          "^_": {}
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}
