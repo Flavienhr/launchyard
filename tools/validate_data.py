@@ -100,6 +100,17 @@ def check_references(docs: dict, errors: list[str]) -> None:
         if "launcher_model" in output and output["launcher_model"] not in launchers:
             errors.append(f"recipes.json: {rid} produit un lanceur inconnu '{output['launcher_model']}'")
 
+    # Chaque entrée de la recette d'un lanceur doit être vendue par au moins un
+    # fournisseur : sinon le coût d'un kit (assurance, stratégie « tout acheter »)
+    # serait faux sans que rien ne le signale.
+    sold = {e.get("component_id") for s in docs.get("suppliers", {}).get("suppliers", [])
+            for e in s.get("catalog", [])}
+    recipe_by_id = {r.get("id"): r for r in docs.get("recipes", {}).get("recipes", [])}
+    for launcher in docs.get("launchers", {}).get("launchers", []):
+        for component_id in recipe_by_id.get(launcher.get("recipe_id"), {}).get("inputs", {}):
+            if component_id not in sold:
+                errors.append(f"launchers.json: {launcher.get('id')} : '{component_id}' n'est vendu par aucun fournisseur")
+
     # Lien recette -> lanceur, dans les deux sens.
     produced_by = {
         r.get("output", {}).get("launcher_model"): r.get("id")
