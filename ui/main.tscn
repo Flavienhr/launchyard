@@ -1,8 +1,7 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/main.gd" id="1_main"]
 [ext_resource type="Theme" path="res://ui/theme/mission_control.tres" id="2_theme"]
-[ext_resource type="Texture2D" path="res://assets/src/facility_warehouse.svg" id="3_warehouse"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -64,70 +63,55 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 12
 
-[node name="StockPanel" type="PanelContainer" parent="Margin/Root/Body"]
+[node name="Tabs" type="TabContainer" parent="Margin/Root/Body"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 2.3
 
-[node name="VBox" type="VBoxContainer" parent="Margin/Root/Body/StockPanel"]
+[node name="Installations" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-theme_override_constants/separation = 8
+horizontal_scroll_mode = 0
 
-[node name="Heading" type="Label" parent="Margin/Root/Body/StockPanel/VBox"]
-layout_mode = 2
-theme_type_variation = &"HeadingLabel"
-text = "ENTREPÔT"
-
-[node name="WarehouseIcon" type="TextureRect" parent="Margin/Root/Body/StockPanel/VBox"]
-custom_minimum_size = Vector2(96, 96)
-layout_mode = 2
-size_flags_horizontal = 0
-texture = ExtResource("3_warehouse")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="StorageLabel" type="Label" parent="Margin/Root/Body/StockPanel/VBox"]
+[node name="FacilitiesBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Installations"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"DimLabel"
-
-[node name="StockLabel" type="Label" parent="Margin/Root/Body/StockPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-autowrap_mode = 3
-
-[node name="OrdersPanel" type="PanelContainer" parent="Margin/Root/Body"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.4
-
-[node name="VBox" type="VBoxContainer" parent="Margin/Root/Body/OrdersPanel"]
-layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Heading" type="Label" parent="Margin/Root/Body/OrdersPanel/VBox"]
+[node name="Construction" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-theme_type_variation = &"HeadingLabel"
-text = "FOURNISSEURS"
+horizontal_scroll_mode = 0
 
-[node name="CatalogBox" type="VBoxContainer" parent="Margin/Root/Body/OrdersPanel/VBox"]
+[node name="BuildBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Construction"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 6
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
 
-[node name="TransitHeading" type="Label" parent="Margin/Root/Body/OrdersPanel/VBox"]
+[node name="Nomenclature" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-theme_type_variation = &"HeadingLabel"
-text = "EN TRANSIT"
+horizontal_scroll_mode = 0
 
-[node name="PendingLabel" type="Label" parent="Margin/Root/Body/OrdersPanel/VBox"]
+[node name="BomBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Nomenclature"]
 unique_name_in_owner = true
 layout_mode = 2
-autowrap_mode = 3
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Fournisseurs" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="CatalogBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Fournisseurs"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
 
 [node name="LogPanel" type="PanelContainer" parent="Margin/Root/Body"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.6
 
 [node name="VBox" type="VBoxContainer" parent="Margin/Root/Body/LogPanel"]
 layout_mode = 2
