@@ -41,6 +41,8 @@ static func step(state: GameState, commands: Array, data: GameData) -> StepResul
 # --- Planning phase ---------------------------------------------------------
 
 static func apply_command(state: GameState, command: Command, data: GameData) -> Array:
+	if state.game_over:  # spec 004 R4
+		return [_rejected("game_over", command)]
 	match command.type:
 		Command.ORDER:
 			return _apply_order(state, command.args, data)
@@ -444,6 +446,8 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 # --- End of day resolution --------------------------------------------------
 
 static func end_day(state: GameState, data: GameData) -> Array:
+	if state.game_over:  # spec 004 R4 : la partie est finie, le jour n'avance plus
+		return []
 	var events: Array = []
 	events.append_array(_resolve_deliveries(state, data))
 	events.append_array(_resolve_constructions(state))
@@ -454,6 +458,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_contract_deadlines(state, data))
 	events.append_array(_resolve_finances(state, data, launch_costs))
+	events.append_array(_resolve_bankruptcy(state, data))
 	state.day += 1
 	return events
 
@@ -720,6 +725,24 @@ static func _resolve_finances(state: GameState, data: GameData, launch_costs := 
 		"scrub_costs": scrub_costs, "refurb_costs": refurb_costs})]
 	if state.money < 0:
 		events.append(_event("negative_balance", {"money": state.money}))
+	return events
+
+
+# Spec 004 R1-R3. Règle désactivée si rules.json est absent (data.rules vide).
+static func _resolve_bankruptcy(state: GameState, data: GameData) -> Array:
+	if data.rules.is_empty():
+		return []
+	if state.money >= 0:
+		state.days_in_debt = 0
+		return []
+	state.days_in_debt += 1
+	var events: Array = []
+	var grace_days := int(data.rules["bankruptcy_grace_days"])
+	if state.days_in_debt == int(data.rules["bankruptcy_warning_days"]):
+		events.append(_event("bankruptcy_warning", {"days_left": grace_days - state.days_in_debt}))
+	if state.days_in_debt == grace_days:
+		state.game_over = true
+		events.append(_event("game_over", {"reason": "bankruptcy"}))
 	return events
 
 

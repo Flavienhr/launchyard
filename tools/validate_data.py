@@ -160,6 +160,11 @@ def check_references(docs: dict, errors: list[str]) -> None:
     for dup in sorted({t for t in template_ids if template_ids.count(t) > 1}):
         errors.append(f"contracts.json: modèle dupliqué '{dup}'")
 
+    # Faillite (spec 004) : l'alerte doit précéder la fin de partie.
+    rules = docs.get("rules", {})
+    if rules and rules.get("bankruptcy_warning_days", 0) >= rules.get("bankruptcy_grace_days", 0):
+        errors.append("rules.json: bankruptcy_warning_days doit être < bankruptcy_grace_days")
+
     start = docs.get("start", {})
     site_ids = {s.get("id") for s in docs.get("sites", {}).get("sites", [])}
     if "site" in start and start["site"] not in site_ids:
