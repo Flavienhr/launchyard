@@ -4,7 +4,50 @@
       "id": "warehouse",
       "name": "Entrepôt",
       "upkeep_per_day": 400,
-      "storage_capacity": 100
+      "storage_capacity": 100,
+      "buildable": true,
+      "build_cost": 25000,
+      "build_days": 6,
+      "max_count": 3
+    },
+    {
+      "id": "tank_shop",
+      "name": "Atelier de soudure",
+      "upkeep_per_day": 300,
+      "buildable": true,
+      "build_cost": 40000,
+      "build_days": 10,
+      "max_count": 1,
+      "slots": 3,
+      "productivity_per_slot": 10
+    },
+    {
+      "id": "integration_hall",
+      "name": "Hall d'intégration",
+      "upkeep_per_day": 800,
+      "buildable": true,
+      "build_cost": 90000,
+      "build_days": 15,
+      "max_count": 2,
+      "slots": 4,
+      "productivity_per_slot": 10,
+      "launcher_capacity": 1
+    },
+    {
+      "id": "launch_pad",
+      "name": "Pas de tir",
+      "upkeep_per_day": 600,
+      "buildable": true,
+      "build_cost": 120000,
+      "build_days": 20,
+      "max_count": 2,
+      "rollout_days": 2,
+      "scrub_recycle_days": 1,
+      "scrub_cost": 2000,
+      "refurb_days": 4,
+      "refurb_cost": 5000,
+      "refurb_days_after_failure": 12,
+      "refurb_cost_after_failure": 20000
     }
   ]
 }

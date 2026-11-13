@@ -1,0 +1,9 @@
+{
+  "technician": {
+    "hire_cost": 1000,
+    "fire_cost": 500,
+    "technician_salary_per_day": 150,
+    "max_technicians": 20
+  },
+  "max_queue_length": 5
+}

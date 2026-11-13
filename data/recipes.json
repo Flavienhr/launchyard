@@ -1,0 +1,18 @@
+{
+  "recipes": [
+    {
+      "id": "weld_tank",
+      "facility_type": "tank_shop",
+      "inputs": { "steel_sheet": 4 },
+      "output": { "component_id": "tank", "quantity": 1 },
+      "work_points": 60
+    },
+    {
+      "id": "assemble_l1",
+      "facility_type": "integration_hall",
+      "inputs": { "engine": 4, "tank": 2, "avionics": 2, "fairing": 1 },
+      "output": { "launcher_model": "l1" },
+      "work_points": 200
+    }
+  ]
+}

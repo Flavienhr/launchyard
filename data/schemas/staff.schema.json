@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "technician",
+    "max_queue_length"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "technician": {
+      "type": "object",
+      "required": [
+        "hire_cost",
+        "fire_cost",
+        "technician_salary_per_day",
+        "max_technicians"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hire_cost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fire_cost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "technician_salary_per_day": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_technicians": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^_": {}
+      }
+    },
+    "max_queue_length": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}
