@@ -33,6 +33,12 @@ const REJECT_REASONS := {
 	"too_many_contracts": "trop de contrats actifs",
 	"orbit_unreachable": "orbite inaccessible depuis ce site",
 	"payload_too_heavy": "charge trop lourde pour tout lanceur",
+	"launcher_unavailable": "lanceur indisponible",
+	"pad_unavailable": "pas de tir indisponible",
+	"contract_unavailable": "contrat indisponible",
+	"too_early": "trop tôt pour ce pas",
+	"after_deadline": "après la date limite du contrat",
+	"unknown_launch": "tir inconnu",
 }
 
 const FAIL_REASONS := {
@@ -48,6 +54,12 @@ const BLOCK_REASONS := {
 
 var session: GameSession
 
+# Launch form selection (UI state only). -1 = not chosen yet, first valid option is used.
+var _sel_launcher := -1
+var _sel_pad := -1
+var _sel_contract := -1
+var _sel_day := -1
+
 @onready var _day_label: Label = %DayLabel
 @onready var _money_label: Label = %MoneyLabel
 @onready var _rep_bar: ProgressBar = %RepBar
@@ -58,17 +70,33 @@ var session: GameSession
 @onready var _build_box: VBoxContainer = %BuildBox
 @onready var _bom_box: VBoxContainer = %BomBox
 @onready var _supply_box: VBoxContainer = %CatalogBox
+@onready var _launch_box: VBoxContainer = %LaunchBox
+@onready var _banner: PanelContainer = %Banner
+@onready var _banner_label: Label = %BannerLabel
+@onready var _game_over: Control = %GameOver
+@onready var _game_over_summary: Label = %Summary
 @onready var _log: RichTextLabel = %LogText
 
 
 func _ready() -> void:
+	%EndDayButton.pressed.connect(func() -> void: session.end_day())
+	%NewGameButton.pressed.connect(_new_game)
+	var titles := [tr("Installations"), tr("Construction"), tr("Nomenclature"),
+		tr("Fournisseurs"), tr("Contrats"), tr("Lancement")]
+	for i in titles.size():
+		_tabs.set_tab_title(i, titles[i])
+	_new_game()
+
+
+func _new_game() -> void:
 	randomize()
 	session = GameSession.new(DataLoader.load_default(), randi())
 	session.changed.connect(_on_session_changed)
-	%EndDayButton.pressed.connect(session.end_day)
-	var titles := [tr("Installations"), tr("Construction & personnel"), tr("Nomenclature"), tr("Fournisseurs & stock"), tr("Contrats")]
-	for i in titles.size():
-		_tabs.set_tab_title(i, titles[i])
+	_sel_launcher = -1
+	_sel_pad = -1
+	_sel_contract = -1
+	_sel_day = -1
+	_log.clear()
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
 	_refresh()
 
@@ -90,6 +118,18 @@ func _refresh() -> void:
 	_rebuild(_build_box, _build_construction)
 	_rebuild(_bom_box, _build_bom)
 	_rebuild(_supply_box, _build_supply)
+	_rebuild(_launch_box, _build_launch)
+	_refresh_bankruptcy()
+
+
+func _refresh_bankruptcy() -> void:
+	var status := SimQueries.bankruptcy_status(session.state, session.data)
+	_banner.visible = status["warning"] and not status["game_over"]
+	_banner_label.text = tr("FAILLITE IMMINENTE : trésorerie négative depuis %d jours, fin de partie dans %d jour(s).") % [
+		status["days_in_debt"], status["days_left"]]
+	_game_over.visible = status["game_over"]
+	_game_over_summary.text = tr("Faillite : trésorerie négative pendant %d jours consécutifs. Dernier jour : %d, argent : %s cr.") % [
+		status["days_in_debt"], session.state.day, _fmt(session.state.money)]
 
 
 func _refresh_reputation() -> void:
@@ -495,6 +535,205 @@ func _build_history_grid(card: VBoxContainer, history: Array) -> void:
 		_grid_label(grid, labels[c["status"]], variations[c["status"]])
 
 
+# --- Launch tab ---------------------------------------------------------------
+
+func _build_launch(box: VBoxContainer) -> void:
+	_build_pads_card(box)
+	_build_ready_card(box)
+	_build_schedule_form(box)
+	_build_scheduled_card(box)
+
+
+func _build_pads_card(box: VBoxContainer) -> void:
+	var card := _card(box)
+	_label(card, tr("PAS DE TIR"), &"HeadingLabel")
+	var pads := SimQueries.pad_infos(session.state, session.data)
+	if pads.is_empty():
+		_label(card, tr("(aucun pas de tir)"), &"DimLabel")
+	for pad in pads:
+		var row := _row(card)
+		_label(row, "#%d  %s" % [pad["id"], pad["name"]])
+		if pad["status"] == "building":
+			_label(row, tr("EN CONSTRUCTION : prêt au jour %d") % pad["ready_day"], &"WarnLabel")
+			continue
+		match pad["pad_state"]:
+			"free":
+				_label(row, tr("LIBRE"), &"OkLabel")
+			"occupied":
+				var text := tr("OCCUPÉ : %s #%d") % [String(pad["launcher_model"]).to_upper(), pad["launcher_id"]]
+				if pad["launch_id"] >= 0:
+					text += tr(" · tir jour %d") % pad["launch_day"]
+				else:
+					text += tr(" · aucun tir planifié")
+				_label(row, text, &"AccentLabel")
+			"refurbishing":
+				_label(row, tr("REMISE EN ÉTAT jusqu'au jour %d (dans %d j)") % [
+					pad["refurb_until_day"], pad["refurb_until_day"] - session.state.day], &"WarnLabel")
+
+
+func _build_ready_card(box: VBoxContainer) -> void:
+	var card := _card(box)
+	_label(card, tr("LANCEURS PRÊTS"), &"HeadingLabel")
+	var ready := SimQueries.ready_launchers(session.state, session.data)
+	if ready.is_empty():
+		_label(card, tr("(aucun lanceur prêt : assemblez-en un dans le hall)"), &"DimLabel")
+	for launcher in ready:
+		var row := _row(card)
+		_label(row, "▮ %s #%d" % [String(launcher["model"]).to_upper(), launcher["id"]], &"OkLabel")
+		_label(row, tr("%s · fiabilité %d %%") % [launcher["location_name"], roundi(launcher["reliability"] * 100)], &"DimLabel")
+
+
+func _build_schedule_form(box: VBoxContainer) -> void:
+	var state := session.state
+	var card := _card(box)
+	_label(card, tr("PLANIFIER UN TIR"), &"HeadingLabel")
+	var ready := SimQueries.ready_launchers(state, session.data)
+	if ready.is_empty():
+		_label(card, tr("(aucun lanceur prêt)"), &"DimLabel")
+		return
+	var launcher_ids: Array = ready.map(func(l: Dictionary) -> int: return l["id"])
+	if _sel_launcher not in launcher_ids:
+		_sel_launcher = launcher_ids[0]
+		_sel_pad = -1
+		_sel_contract = -1
+		_sel_day = -1
+
+	var launcher_row := _row(card)
+	_label(launcher_row, tr("Lanceur"), &"DimLabel").custom_minimum_size.x = 110
+	var launcher_menu := OptionButton.new()
+	for launcher in ready:
+		launcher_menu.add_item("%s #%d" % [String(launcher["model"]).to_upper(), launcher["id"]], launcher["id"])
+	launcher_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	launcher_menu.select(launcher_ids.find(_sel_launcher))
+	launcher_menu.item_selected.connect(func(index: int) -> void:
+		_sel_launcher = launcher_menu.get_item_id(index)
+		_sel_pad = -1
+		_sel_contract = -1
+		_sel_day = -1
+		_rebuild(_launch_box, _build_launch))
+	launcher_row.add_child(launcher_menu)
+
+	var pad_options := SimQueries.launch_pad_options(state, session.data, _sel_launcher)
+	_sel_pad = _pick_option(pad_options, _sel_pad)
+	_option_row(card, tr("Pas de tir"), pad_options, _sel_pad,
+		func(o: Dictionary) -> String: return "#%d  %s" % [o["id"], o["name"]],
+		func(id: int) -> void: _sel_pad = id)
+
+	var contract_options := SimQueries.launch_contract_options(state, session.data, _sel_launcher)
+	_sel_contract = _pick_option(contract_options, _sel_contract)
+	_option_row(card, tr("Contrat"), contract_options, _sel_contract,
+		func(o: Dictionary) -> String: return "#%d  %s · %s · %s kg" % [
+			o["id"], o["client"], String(o["orbit"]).to_upper(), _fmt(o["payload_kg"])],
+		func(id: int) -> void: _sel_contract = id)
+
+	if _sel_pad < 0 or _sel_contract < 0:
+		var why := tr("Aucun pas de tir utilisable.") if _sel_pad < 0 else tr("Aucun contrat actif compatible, sans tir.")
+		_label(card, why, &"WarnLabel")
+		return
+
+	var min_day := SimQueries.min_launch_day(state, session.data, _sel_launcher, _sel_pad)
+	if _sel_day < min_day:
+		_sel_day = min_day
+	var plan := SimQueries.launch_plan(state, session.data, _sel_launcher, _sel_pad, _sel_contract, _sel_day)
+	var day_row := _row(card)
+	_label(day_row, tr("Jour de tir"), &"DimLabel").custom_minimum_size.x = 110
+	_button(day_row, "−", func() -> void: _shift_day(-1), _sel_day <= min_day)
+	var day_label := _grid_label(day_row, tr("jour %d") % _sel_day)
+	day_label.custom_minimum_size.x = 80
+	day_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_button(day_row, "+", func() -> void: _shift_day(1), plan["max_day"] >= 0 and _sel_day >= plan["max_day"])
+	_label(day_row, tr("minimum : jour %d") % min_day, &"DimLabel")
+
+	var risk_pct := roundi(plan["scrub_chance"] * 100)
+	_label(card, tr("Saison : %s · risque de report météo ce jour-là : %d %%") % [plan["season_name"], risk_pct],
+		&"WarnLabel" if risk_pct > 0 else &"OkLabel")
+	_label(card, tr("Fiabilité actuelle du modèle : %d %%") % roundi(plan["reliability"] * 100))
+	_label(card, tr("Marge avant la date limite : %d j (limite : jour %d)") % [plan["margin_days"], plan["max_day"]],
+		&"DangerLabel" if plan["margin_days"] < 0 else &"DimLabel")
+	if plan["error"] != "":
+		_label(card, tr(REJECT_REASONS.get(plan["error"], plan["error"])), &"WarnLabel")
+	var go := _button(card, tr("Planifier le tir"), func() -> void:
+		_send(Command.schedule_launch(_sel_launcher, _sel_pad, _sel_contract, _sel_day))
+		_sel_day = -1
+		_sel_pad = -1
+		_sel_contract = -1, plan["error"] != "")
+	go.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+
+
+## The current choice if it is an enabled option, else the first enabled option id. -1 if none.
+func _pick_option(options: Array, current: int) -> int:
+	for option in options:
+		if option["id"] == current and option["ok"]:
+			return current
+	for option in options:
+		if option["ok"]:
+			return option["id"]
+	return -1
+
+
+func _option_row(card: VBoxContainer, title: String, options: Array, selected: int,
+		describe: Callable, on_select: Callable) -> void:
+	var row := _row(card)
+	_label(row, title, &"DimLabel").custom_minimum_size.x = 110
+	var menu := OptionButton.new()
+	menu.fit_to_longest_item = false
+	menu.clip_text = true
+	menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for i in options.size():
+		var option: Dictionary = options[i]
+		var text: String = describe.call(option)
+		if not option["ok"]:
+			text += " (%s)" % tr(REJECT_REASONS.get(option["reason"], option["reason"]))
+		menu.add_item(text, option["id"])
+		menu.set_item_disabled(i, not option["ok"])
+		if option["id"] == selected:
+			menu.select(i)
+	if options.is_empty():
+		menu.add_item(tr("(aucun)"))
+		menu.disabled = true
+	menu.item_selected.connect(func(index: int) -> void:
+		on_select.call(menu.get_item_id(index))
+		_sel_day = -1
+		_rebuild(_launch_box, _build_launch))
+	row.add_child(menu)
+
+
+func _shift_day(delta: int) -> void:
+	_sel_day += delta
+	_rebuild(_launch_box, _build_launch)
+
+
+func _build_scheduled_card(box: VBoxContainer) -> void:
+	var card := _card(box)
+	_label(card, tr("TIRS PLANIFIÉS"), &"HeadingLabel")
+	var launches := SimQueries.scheduled_launches(session.state, session.data)
+	if launches.is_empty():
+		_label(card, tr("(aucun tir planifié)"), &"DimLabel")
+		return
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 6)
+	card.add_child(grid)
+	for title in [tr("Lanceur"), tr("Contrat"), tr("Jour"), tr("Météo"), tr("Marge"), ""]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Contrat"))
+	for launch in launches:
+		_grid_label(grid, "%s #%d" % [String(launch["launcher_model"]).to_upper(), launch["launcher_id"]], &"OkLabel")
+		_grid_label(grid, "#%d  %s" % [launch["contract_id"], launch["client"]], &"", true)
+		_grid_label(grid, tr("jour %d") % launch["launch_day"])
+		var risk_pct := roundi(launch["scrub_chance"] * 100)
+		_grid_label(grid, "%s · %d %%" % [launch["season_name"], risk_pct], &"WarnLabel" if risk_pct > 0 else &"OkLabel")
+		_grid_label(grid, tr("%d j") % launch["margin_days"], &"DangerLabel" if launch["margin_days"] < 0 else &"DimLabel")
+		var cell := _row(grid)
+		var earlier := _button(cell, "◂", func() -> void: _send(Command.reschedule_launch(launch["id"], launch["launch_day"] - 1)),
+			launch["launch_day"] - 1 < session.state.day + 1)
+		earlier.tooltip_text = tr("Avancer le tir d'un jour")
+		var later := _button(cell, "▸", func() -> void: _send(Command.reschedule_launch(launch["id"], launch["launch_day"] + 1)),
+			launch["launch_day"] + 1 > launch["deadline_day"])
+		later.tooltip_text = tr("Reporter le tir d'un jour")
+		_button(cell, tr("Annuler"), func() -> void: _send(Command.cancel_launch(launch["id"])))
+
+
 # --- Journal ----------------------------------------------------------------
 
 func _log_event(e: Dictionary) -> void:
@@ -514,10 +753,36 @@ func _log_event(e: Dictionary) -> void:
 		"warehouse_full":
 			_log_line(tr("Entrepôt plein : commande #%d en attente au portail") % e["order_id"], COLOR_WARN)
 		"daily_costs":
-			_log_line(tr("── Fin du jour %d · entretien -%s cr · salaires -%s cr ──") % [
-				e["day"], _fmt(e["upkeep"]), _fmt(e.get("salaries", 0))], COLOR_DIM)
+			var extra := ""
+			var launch_costs := int(e.get("scrub_costs", 0)) + int(e.get("refurb_costs", 0))
+			if launch_costs > 0:
+				extra = tr(" · tirs -%s cr") % _fmt(launch_costs)
+			_log_line(tr("── Fin du jour %d · entretien -%s cr · salaires -%s cr%s ──") % [
+				e["day"], _fmt(e["upkeep"]), _fmt(e.get("salaries", 0)), extra], COLOR_DIM)
 		"negative_balance":
 			_log_line(tr("Trésorerie négative !"), COLOR_DANGER)
+		"bankruptcy_warning":
+			_log_line(tr("ALERTE FAILLITE : fin de partie dans %d jour(s) si la trésorerie reste négative") % e["days_left"], COLOR_DANGER)
+		"game_over":
+			_log_line(tr("FIN DE PARTIE : faillite"), COLOR_DANGER)
+		"launch_scheduled":
+			_log_line(tr("Tir #%d planifié au jour %d") % [e["launch_id"], e["launch_day"]], COLOR_ACCENT)
+		"launch_rescheduled":
+			_log_line(tr("Tir #%d reprogrammé au jour %d") % [e["launch_id"], e["launch_day"]], COLOR_ACCENT)
+		"launch_cancelled":
+			_log_line(tr("Tir #%d annulé (jour %d)") % [e["launch_id"], e["launch_day"]], COLOR_DIM)
+		"pad_ready":
+			_log_line(tr("Pas de tir #%d de nouveau disponible") % e["pad_id"], COLOR_OK)
+		"launch_scrubbed":
+			var season_names: Array = data.active_site()["season_names"]
+			_log_line(tr("[REPORT] Tir #%d reporté au jour %d (météo : %s, report n°%d)") % [
+				e["launch_id"], e["new_launch_day"], season_names[e["season"]], e["scrubs"]], COLOR_WARN)
+		"launch_succeeded":
+			_log_line(tr("[SUCCÈS] Tir #%d réussi ! Contrat #%d (fiabilité %d %%)") % [
+				e["launch_id"], e["contract_id"], roundi(e["reliability"] * 100)], COLOR_OK)
+		"launch_failed":
+			_log_line(tr("[ÉCHEC] Tir #%d échoué : le lanceur est perdu. Contrat #%d (fiabilité %d %%)") % [
+				e["launch_id"], e["contract_id"], roundi(e["reliability"] * 100)], COLOR_DANGER)
 		"facility_build_started":
 			_log_line(tr("Construction : %s (-%s cr), prête au jour %d") % [
 				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)

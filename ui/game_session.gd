@@ -17,9 +17,13 @@ func _init(p_data: GameData, game_seed: int) -> void:
 
 
 func submit(command: Command) -> void:
+	if state.game_over:
+		return
 	command_log.get_or_add(state.day, []).append(command.to_dict())
 	changed.emit(Simulation.apply_command(state, command, data))
 
 
 func end_day() -> void:
+	if state.game_over:
+		return
 	changed.emit(Simulation.end_day(state, data))
