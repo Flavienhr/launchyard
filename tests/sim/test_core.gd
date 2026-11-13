@@ -44,3 +44,13 @@ func _random_game(data: GameData, seed: int) -> String:
 		orders[day] = [Command.order("acme", "steel", 1)]
 	var result := F.run(Simulation.new_game(data, seed), data, 30, orders)
 	return JSON.stringify([result.state.to_dict(), result.events])
+
+
+func test_pending_orders_survive_json_round_trip() -> void:
+	var data := F.data()
+	var state := Simulation.new_game(data, 1)
+	Simulation.apply_command(state, Command.order("acme", "steel", 3), data)
+	var restored := GameState.from_dict(JSON.parse_string(JSON.stringify(state.to_dict())))
+	var order: Dictionary = restored.pending_orders[0]
+	for key in ["id", "quantity", "arrival_day"]:
+		assert_eq(typeof(order[key]), TYPE_INT, key)
