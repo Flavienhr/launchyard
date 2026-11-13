@@ -402,16 +402,9 @@ static func start_refurbishment(pad: Dictionary, until_day: int) -> void:
 static func _apply_accept_contract(state: GameState, args: Dictionary, data: GameData) -> Array:
 	var command := Command.new(Command.ACCEPT_CONTRACT, args)
 	var contract := ContractRules.find(state, int(args.get("contract_id", 0)))
-	if contract.is_empty() or contract["status"] != ContractRules.OFFER:
-		return [_rejected("not_an_offer", command)]
-	if ContractRules.active_count(state) >= int(data.contracts["max_active_contracts"]):
-		return [_rejected("too_many_contracts", command)]
-	var site := data.active_site()
-	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
-	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
-		return [_rejected("orbit_unreachable", command)]
-	if int(contract["payload_kg"]) > ContractRules.best_capacity(data, contract["orbit"], site):
-		return [_rejected("payload_too_heavy", command)]
+	var error := ContractRules.acceptance_error(state, data, contract)
+	if error != "":
+		return [_rejected(error, command)]
 	contract["status"] = ContractRules.ACTIVE
 	state.money += int(contract["advance"])
 	return [_event("contract_accepted", {

@@ -29,6 +29,15 @@ const REJECT_REASONS := {
 	"queue_full": "file d'attente pleine",
 	"job_started": "job déjà démarré",
 	"unknown_job": "job inconnu",
+	"not_an_offer": "ce n'est plus une offre",
+	"too_many_contracts": "trop de contrats actifs",
+	"orbit_unreachable": "orbite inaccessible depuis ce site",
+	"payload_too_heavy": "charge trop lourde pour tout lanceur",
+}
+
+const FAIL_REASONS := {
+	"launch_failed": "échec du lanceur",
+	"deadline_missed": "date limite manquée",
 }
 
 const BLOCK_REASONS := {
@@ -41,6 +50,9 @@ var session: GameSession
 
 @onready var _day_label: Label = %DayLabel
 @onready var _money_label: Label = %MoneyLabel
+@onready var _rep_bar: ProgressBar = %RepBar
+@onready var _rep_label: Label = %RepLabel
+@onready var _contracts_box: VBoxContainer = %ContractsBox
 @onready var _tabs: TabContainer = %Tabs
 @onready var _facilities_box: VBoxContainer = %FacilitiesBox
 @onready var _build_box: VBoxContainer = %BuildBox
@@ -54,7 +66,7 @@ func _ready() -> void:
 	session = GameSession.new(DataLoader.load_default(), randi())
 	session.changed.connect(_on_session_changed)
 	%EndDayButton.pressed.connect(session.end_day)
-	var titles := [tr("Installations"), tr("Construction & personnel"), tr("Nomenclature"), tr("Fournisseurs & stock")]
+	var titles := [tr("Installations"), tr("Construction & personnel"), tr("Nomenclature"), tr("Fournisseurs & stock"), tr("Contrats")]
 	for i in titles.size():
 		_tabs.set_tab_title(i, titles[i])
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
@@ -72,10 +84,20 @@ func _refresh() -> void:
 	_day_label.text = tr("JOUR %d") % state.day
 	_money_label.text = "%s cr" % _fmt(state.money)
 	_money_label.theme_type_variation = &"DangerLabel" if state.money < 0 else &"Label"
+	_refresh_reputation()
+	_rebuild(_contracts_box, _build_contracts)
 	_rebuild(_facilities_box, _build_facilities)
 	_rebuild(_build_box, _build_construction)
 	_rebuild(_bom_box, _build_bom)
 	_rebuild(_supply_box, _build_supply)
+
+
+func _refresh_reputation() -> void:
+	var rep := SimQueries.reputation_info(session.state, session.data)
+	_rep_bar.min_value = rep["min"]
+	_rep_bar.max_value = rep["max"]
+	_rep_bar.value = rep["value"]
+	_rep_label.text = "%d / %d" % [rep["value"], rep["max"]]
 
 
 func _rebuild(box: VBoxContainer, builder: Callable) -> void:
@@ -298,7 +320,7 @@ func _build_bom_grid(card: VBoxContainer, rows: Array) -> void:
 			_grid_label(grid, "")
 
 
-func _grid_label(grid: GridContainer, text: String, variation := &"", expand := false) -> Label:
+func _grid_label(grid: Container, text: String, variation := &"", expand := false) -> Label:
 	var label := Label.new()
 	label.text = text
 	if variation != &"":
@@ -361,6 +383,118 @@ func _build_supply(box: VBoxContainer) -> void:
 				func() -> void: _send(Command.order(supplier_id, entry["component_id"], ORDER_QUANTITY)))
 
 
+# --- Contracts tab ----------------------------------------------------------
+
+func _build_contracts(box: VBoxContainer) -> void:
+	var state := session.state
+	var rep := SimQueries.reputation_info(state, session.data)
+	var rep_card := _card(box)
+	_label(rep_card, tr("RÉPUTATION : %d / %d") % [rep["value"], rep["max"]], &"HeadingLabel")
+	if rep["next_unlock_at"] >= 0:
+		_label(rep_card, tr("Prochain déblocage à %d : offres vers %s") % [
+			rep["next_unlock_at"], String(rep["next_unlock_orbit"]).to_upper()], &"DimLabel")
+	else:
+		_label(rep_card, tr("Toutes les offres sont débloquées"), &"DimLabel")
+
+	var offers_card := _card(box)
+	_label(offers_card, tr("OFFRES"), &"HeadingLabel")
+	var offers := SimQueries.contract_offers(state, session.data)
+	if offers.is_empty():
+		_label(offers_card, tr("(aucune offre)"), &"DimLabel")
+	else:
+		_build_offers_grid(offers_card, offers)
+
+	var active_card := _card(box)
+	_label(active_card, tr("CONTRATS ACTIFS"), &"HeadingLabel")
+	var active := SimQueries.active_contracts(state, session.data)
+	if active.is_empty():
+		_label(active_card, tr("(aucun contrat actif)"), &"DimLabel")
+	else:
+		_build_active_grid(active_card, active)
+
+	var history_card := _card(box)
+	_label(history_card, tr("HISTORIQUE"), &"HeadingLabel")
+	var history := SimQueries.contract_history(state)
+	if history.is_empty():
+		_label(history_card, tr("(vide)"), &"DimLabel")
+	else:
+		_build_history_grid(history_card, history)
+
+
+func _build_offers_grid(card: VBoxContainer, offers: Array) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 9
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 6)
+	card.add_child(grid)
+	for title in [tr("Client"), tr("Orbite"), tr("Charge"), tr("Paiement"), tr("Avance"),
+			tr("Pénalité"), tr("Limite"), tr("Expire"), ""]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Client"))
+	for offer in offers:
+		_grid_label(grid, "#%d  %s" % [offer["id"], offer["client"]], &"", true)
+		_grid_label(grid, String(offer["orbit"]).to_upper(), &"AccentLabel")
+		var mass := tr("%s kg") % _fmt(offer["payload_kg"])
+		var mass_label := _grid_label(grid, ("▲ " if offer["near_capacity"] else "") + mass,
+			&"WarnLabel" if offer["near_capacity"] else &"")
+		if offer["near_capacity"]:
+			mass_label.tooltip_text = tr("Proche de la capacité (%s kg)") % _fmt(offer["capacity_kg"])
+			mass_label.mouse_filter = Control.MOUSE_FILTER_STOP
+		_grid_label(grid, _fmt(offer["payment"]), &"OkLabel")
+		_grid_label(grid, _fmt(offer["advance"]))
+		_grid_label(grid, _fmt(offer["penalty"]), &"DimLabel")
+		_grid_label(grid, tr("j%d (%d j)") % [offer["deadline_day"], offer["deadline_days_left"]])
+		_grid_label(grid, tr("%d j") % offer["offer_days_left"],
+			&"WarnLabel" if offer["offer_days_left"] <= 1 else &"DimLabel")
+		var cell := _row(grid)
+		var button := _button(cell, tr("Signer"), func() -> void: _send(Command.accept_contract(offer["id"])),
+			not offer["can_accept"])
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		if not offer["can_accept"]:
+			var why := tr(REJECT_REASONS.get(offer["reject_reason"], offer["reject_reason"]))
+			button.tooltip_text = why
+			var reason := _grid_label(cell, why, &"WarnLabel")
+			reason.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+
+func _build_active_grid(card: VBoxContainer, active: Array) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 6)
+	card.add_child(grid)
+	for title in [tr("Contrat"), tr("Orbite"), tr("Charge"), tr("Paiement"), tr("Date limite"), tr("Tir")]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Contrat"))
+	for c in active:
+		var warn: bool = c["urgent"]
+		_grid_label(grid, "#%d  %s" % [c["id"], c["client"]], &"", true)
+		_grid_label(grid, String(c["orbit"]).to_upper(), &"AccentLabel")
+		_grid_label(grid, tr("%s kg") % _fmt(c["payload_kg"]))
+		_grid_label(grid, tr("%s cr") % _fmt(c["payment"]), &"OkLabel")
+		var left: int = c["deadline_days_left"]
+		_grid_label(grid, tr("jour %d (%d j)") % [c["deadline_day"], left],
+			&"DangerLabel" if warn else &"")
+		if c["launch_id"] >= 0:
+			_grid_label(grid, tr("planifié jour %d") % c["launch_day"], &"OkLabel")
+		else:
+			_grid_label(grid, tr("▲ non planifié") if warn else tr("non planifié"),
+				&"DangerLabel" if warn else &"DimLabel")
+
+
+func _build_history_grid(card: VBoxContainer, history: Array) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 4)
+	card.add_child(grid)
+	var labels := {"completed": tr("réussi"), "failed": tr("échoué"), "expired": tr("expirée")}
+	var variations := {"completed": &"OkLabel", "failed": &"DangerLabel", "expired": &"DimLabel"}
+	for c in history:
+		_grid_label(grid, "#%d  %s" % [c["id"], c["client"]], &"", true)
+		_grid_label(grid, String(c["orbit"]).to_upper(), &"AccentLabel")
+		_grid_label(grid, tr("%s kg") % _fmt(c["payload_kg"]))
+		_grid_label(grid, labels[c["status"]], variations[c["status"]])
+
+
 # --- Journal ----------------------------------------------------------------
 
 func _log_event(e: Dictionary) -> void:
@@ -417,9 +551,21 @@ func _log_event(e: Dictionary) -> void:
 		"launcher_assembled":
 			_log_line(tr("Lanceur %s #%d assemblé") % [String(e["model"]).to_upper(), e["launcher_id"]], COLOR_OK)
 		"offer_generated":
-			_log_line(tr("Nouvelle offre de contrat #%d") % e["contract_id"], COLOR_DIM)
+			_log_line(tr("Nouvelle offre #%d : %s, %s kg, %s cr, limite jour %d") % [
+				e["contract_id"], String(e["orbit"]).to_upper(), _fmt(e["payload_kg"]),
+				_fmt(e["payment"]), e["deadline_day"]], COLOR_ACCENT)
 		"offer_expired":
 			_log_line(tr("Offre de contrat #%d expirée") % e["contract_id"], COLOR_DIM)
+		"contract_accepted":
+			_log_line(tr("Contrat #%d signé : avance +%s cr") % [e["contract_id"], _fmt(e["advance"])], COLOR_OK)
+		"contract_completed":
+			_log_line(tr("Contrat #%d réussi : solde +%s cr") % [e["contract_id"], _fmt(e["balance_paid"])], COLOR_OK)
+		"contract_failed":
+			_log_line(tr("Contrat #%d échoué (%s) : -%s cr") % [
+				e["contract_id"], tr(FAIL_REASONS.get(e["reason"], e["reason"])), _fmt(e["amount_debited"])], COLOR_DANGER)
+		"reputation_changed":
+			_log_line(tr("Réputation %+d (%d)") % [e["delta"], e["reputation"]],
+				COLOR_OK if e["delta"] >= 0 else COLOR_DANGER)
 		_:
 			_log_line(str(e), COLOR_DIM)
 
