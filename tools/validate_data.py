@@ -116,10 +116,30 @@ def check_references(docs: dict, errors: list[str]) -> None:
                 f"qui ne produit pas ce lanceur")
 
     # Contrats : bornes cohérentes et réputation dans [min, max].
-    # (La validation des ids d'orbite viendra avec orbits.json, issue #13.)
     contracts = docs.get("contracts", {})
+
+    # Orbites : lanceurs, sites et contrats ne référencent que des ids connus.
+    orbits = ids(docs, "orbits", errors)
+    for launcher in docs.get("launchers", {}).get("launchers", []):
+        for orbit_id in launcher.get("payload_kg", {}):
+            if orbit_id not in orbits:
+                errors.append(
+                    f"launchers.json: {launcher.get('id')} a une capacité vers une orbite inconnue '{orbit_id}'")
+    for site in docs.get("sites", {}).get("sites", []):
+        sid = site.get("id")
+        for orbit_id in site.get("payload_bonus_pct", {}):
+            if orbit_id not in orbits:
+                errors.append(f"sites.json: {sid} a un bonus vers une orbite inconnue '{orbit_id}'")
+        if len(site.get("scrub_chance_by_season", [])) != len(site.get("season_names", [])):
+            errors.append(f"sites.json: {sid} a un nombre de saisons différent de scrub_chance_by_season")
+        for bounds in site.get("azimuth_ranges", []):
+            if len(bounds) == 2 and bounds[0] > bounds[1]:
+                errors.append(f"sites.json: {sid} a un intervalle d'azimut inversé {bounds}")
+
     for tpl in contracts.get("templates", []):
         tid = tpl.get("id")
+        if "orbit" in tpl and tpl["orbit"] not in orbits:
+            errors.append(f"contracts.json: {tid} vise une orbite inconnue '{tpl['orbit']}'")
         if tpl.get("mass_min_kg", 0) > tpl.get("mass_max_kg", 0):
             errors.append(f"contracts.json: {tid} mass_min_kg > mass_max_kg")
         if tpl.get("deadline_min_days", 0) > tpl.get("deadline_max_days", 0):
@@ -135,6 +155,9 @@ def check_references(docs: dict, errors: list[str]) -> None:
         errors.append(f"contracts.json: modèle dupliqué '{dup}'")
 
     start = docs.get("start", {})
+    site_ids = {s.get("id") for s in docs.get("sites", {}).get("sites", [])}
+    if "site" in start and start["site"] not in site_ids:
+        errors.append(f"start.json: site inconnu '{start['site']}'")
     for facility_id in start.get("facilities", []):
         if facility_id not in facilities:
             errors.append(f"start.json: installation inconnue '{facility_id}'")

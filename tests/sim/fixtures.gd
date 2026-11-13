@@ -16,6 +16,14 @@ const FIRE_COST := 50
 const SALARY := 10
 const MAX_TECHS := 5
 const MAX_QUEUE := 3
+const SITE_ID := "pad_site"
+const AZ_MIN := 45
+const AZ_MAX := 110
+const LEO_AZ := 90
+const SSO_AZ := 195
+const LEO_KG := 2_000
+const SEASON_DAYS := 10
+const SCRUB_BY_SEASON := [0.1, 0.2, 0.3, 0.4]
 
 
 static func data(delay_chance := 0.0) -> GameData:
@@ -39,12 +47,26 @@ static func data(delay_chance := 0.0) -> GameData:
 		{"technician": {"hire_cost": HIRE_COST, "fire_cost": FIRE_COST,
 			"technician_salary_per_day": SALARY, "max_technicians": MAX_TECHS},
 			"max_queue_length": MAX_QUEUE},
+		{
+			"orbits": [{"id": "leo", "azimuth_deg": LEO_AZ}, {"id": "sso", "azimuth_deg": SSO_AZ}],
+			"sites": [site()],
+			"launchers": [{"id": "l1", "payload_kg": {"leo": LEO_KG}, "reliability_base": 0.5,
+				"reliability_gain_per_success": 0.1, "reliability_max": 1.0}],
+			"site_id": SITE_ID,
+		},
 		[{"id": "weld", "facility_type": "shop", "inputs": {"steel": 2},
 			"output": {"component_id": "tank", "quantity": 1}, "work_points": 20},
 		{"id": "weld_long", "facility_type": "shop", "inputs": {"steel": 2},
 			"output": {"component_id": "tank", "quantity": 1}, "work_points": 25},
 		{"id": "assemble", "facility_type": "hall", "inputs": {"tank": 1, "engine": 1},
 			"output": {"launcher_model": "l1"}, "work_points": 20}])
+
+
+## Launch site fixture: reaches [AZ_MIN, AZ_MAX], 4 seasons of SEASON_DAYS days.
+static func site(bonus := {}) -> Dictionary:
+	return {"id": SITE_ID, "azimuth_ranges": [[AZ_MIN, AZ_MAX]], "payload_bonus_pct": bonus,
+		"season_length_days": SEASON_DAYS, "start_day_offset": 0,
+		"season_names": ["a", "b", "c", "d"], "scrub_chance_by_season": SCRUB_BY_SEASON}
 
 
 ## Runs `days` days, applying `commands_by_day[day]` (if any) on each day.

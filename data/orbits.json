@@ -1,0 +1,7 @@
+{
+  "orbits": [
+    { "id": "leo", "name": "Orbite basse", "azimuth_deg": 90 },
+    { "id": "sso", "name": "Orbite polaire héliosynchrone", "azimuth_deg": 195 },
+    { "id": "gto", "name": "Transfert géostationnaire", "azimuth_deg": 95 }
+  ]
+}
