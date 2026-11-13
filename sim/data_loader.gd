@@ -7,19 +7,10 @@ const DATA_DIR := "res://data"
 
 
 static func load_default() -> GameData:
-	return GameData.from_dicts(
-		_read("components.json").get("components", []),
-		_read("suppliers.json").get("suppliers", []),
-		_read("facilities.json").get("facilities", []),
-		_read("start.json"),
-		_read("staff.json"),
-		{
-			"orbits": _read("orbits.json").get("orbits", []),
-			"sites": _read("sites.json").get("sites", []),
-			"launchers": _read("launchers.json").get("launchers", []),
-		},
-		_read("recipes.json").get("recipes", []),
-		_read("contracts.json"))
+	var files := {}
+	for stem in GameData.INDEXED_FILES + GameData.WHOLE_FILES:
+		files[stem] = _read(stem + ".json")
+	return GameData.from_files(files)
 
 
 static func _read(file_name: String) -> Dictionary:

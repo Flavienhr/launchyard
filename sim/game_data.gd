@@ -16,35 +16,26 @@ var contracts: Dictionary = {}   # contracts.json (spec 002)
 var active_site_id: String = ""  # site of the game; see active_site()
 
 
-static func from_dicts(
-		components_list: Array,
-		suppliers_list: Array,
-		facilities_list: Array,
-		start_dict: Dictionary,
-		staff_dict: Dictionary = {},
-		launch_dict: Dictionary = {},  # keys: orbits, sites, launchers (Arrays), site_id
-		recipes_list: Array = [],
-		contracts_dict: Dictionary = {}) -> GameData:
+## Files made of records with an "id" (file content: {"<stem>": [records]}).
+const INDEXED_FILES := ["components", "suppliers", "facilities", "recipes", "orbits", "sites", "launchers"]
+## Files used as a whole object.
+const WHOLE_FILES := ["start", "staff", "contracts"]
+
+
+## Builds GameData from parsed data files keyed by stem (e.g. "components"),
+## each value being the full file content. A missing file is empty.
+## Adding a data file = adding its stem to a list above, never a new parameter:
+## parallel issues adding data files must not collide on this signature.
+static func from_files(files: Dictionary) -> GameData:
 	var data := GameData.new()
-	for c in components_list:
-		data.components[c["id"]] = c
-	for s in suppliers_list:
-		data.suppliers[s["id"]] = s
-	for f in facilities_list:
-		data.facilities[f["id"]] = f
-	data.start = start_dict
-	data.staff = staff_dict
-	for r in recipes_list:
-		data.recipes[r["id"]] = r
-	for o in launch_dict.get("orbits", []):
-		data.orbits[o["id"]] = o
-	for site in launch_dict.get("sites", []):
-		data.sites[site["id"]] = site
-	for l in launch_dict.get("launchers", []):
-		data.launchers[l["id"]] = l
-	data.contracts = contracts_dict
-	# Explicit site: launch_dict.site_id (tests) or start.json "site" (game).
-	data.active_site_id = launch_dict.get("site_id", start_dict.get("site", ""))
+	for stem in INDEXED_FILES:
+		var table: Dictionary = data.get(stem)
+		for record in files.get(stem, {}).get(stem, []):
+			table[record["id"]] = record
+	for stem in WHOLE_FILES:
+		data.set(stem, files.get(stem, {}))
+	# Explicit site of the game (start.json "site"), see active_site().
+	data.active_site_id = data.start.get("site", "")
 	return data
 
 

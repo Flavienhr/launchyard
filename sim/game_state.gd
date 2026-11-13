@@ -58,6 +58,9 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.technicians_hired = int(d["technicians_hired"])
 	s.next_facility_id = int(d["next_facility_id"])
 	s.pending_orders = d["pending_orders"].duplicate(true)
+	for order in s.pending_orders:
+		for key in ["id", "quantity", "arrival_day"]:
+			order[key] = int(order[key])
 	s.next_order_id = int(d["next_order_id"])
 	s.next_job_id = int(d["next_job_id"])
 	s.launchers = d["launchers"].duplicate(true)
