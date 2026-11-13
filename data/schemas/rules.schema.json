@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "bankruptcy_grace_days",
+    "bankruptcy_warning_days"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_note": {
+      "type": "string"
+    },
+    "bankruptcy_grace_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bankruptcy_warning_days": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
