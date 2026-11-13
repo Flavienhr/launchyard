@@ -31,3 +31,32 @@ static func season_of(day: int, site: Dictionary) -> int:
 static func model_reliability(model: Dictionary, successes: int) -> float:
 	var value: float = model["reliability_base"] + model["reliability_gain_per_success"] * successes
 	return minf(value, model["reliability_max"])
+
+
+## Spec 003 decision 1: premium of a launch insured on `contract`, rounded down.
+static func insurance_premium(contract: Dictionary, data: GameData) -> int:
+	return int(contract["payment"]) * int(data.contracts["insurance_premium_pct"]) / 100
+
+
+## Spec 003 decision 1: refund on failure = payout_pct of the purchase cost of one kit.
+static func insurance_payout(model: Dictionary, data: GameData) -> int:
+	return kit_purchase_cost(model, data) * int(data.contracts["insurance_payout_pct"]) / 100
+
+
+## Cost of one kit: for each recipe input, quantity * cheapest unit price among suppliers.
+## A component no supplier offers adds 0 (see open points in the report).
+static func kit_purchase_cost(model: Dictionary, data: GameData) -> int:
+	var recipe: Dictionary = data.recipes[model["recipe_id"]]
+	var total := 0
+	for component_id in recipe["inputs"]:
+		total += int(recipe["inputs"][component_id]) * _cheapest_unit_price(component_id, data)
+	return total
+
+
+static func _cheapest_unit_price(component_id: String, data: GameData) -> int:
+	var best := -1
+	for supplier_id in data.suppliers:
+		var entry := data.catalog_entry(supplier_id, component_id)
+		if not entry.is_empty() and (best < 0 or int(entry["unit_price"]) < best):
+			best = int(entry["unit_price"])
+	return maxi(best, 0)

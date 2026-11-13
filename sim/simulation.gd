@@ -291,17 +291,27 @@ static func _apply_schedule_launch(state: GameState, args: Dictionary, data: Gam
 		return [_rejected("too_early", command)]
 	if launch_day > int(contract["deadline_day"]):
 		return [_rejected("after_deadline", command)]
+	var insured := bool(args.get("insured", false))
+	var premium := 0
+	if insured:  # spec 003 decision 1: premium debited now, not refunded on cancel
+		premium = LaunchRules.insurance_premium(contract, data)
+		if premium > state.money:
+			return [_rejected("insufficient_funds", command)]
 
 	launcher["location_facility_id"] = pad["id"]  # leaves the hall now (decision 4)
 	pad["pad_state"] = PAD_OCCUPIED
 	pad["launcher_id"] = launcher["id"]
 	var launch := {
 		"id": state.next_launch_id, "launcher_id": launcher["id"], "pad_id": pad["id"],
-		"contract_id": contract["id"], "launch_day": launch_day, "scrubs": 0,
+		"contract_id": contract["id"], "launch_day": launch_day, "scrubs": 0, "insured": insured,
 	}
 	state.next_launch_id += 1
 	state.launches.append(launch)
-	return [_event("launch_scheduled", {"launch_id": launch["id"], "launch_day": launch_day})]
+	state.money -= premium
+	var events := [_event("launch_scheduled", {"launch_id": launch["id"], "launch_day": launch_day})]
+	if insured:
+		events.append(_event("insurance_paid", {"launch_id": launch["id"], "premium": premium}))
+	return events
 
 
 static func _is_on_a_pad(state: GameState, data: GameData, launcher: Dictionary) -> bool:
@@ -385,6 +395,10 @@ static func _resolve_launches(state: GameState, data: GameData, costs: Dictionar
 			events.append_array(fail_contract(state, data, launch["contract_id"], ContractRules.LAUNCH_FAILED))
 			refurb_days = int(pad_type["refurb_days_after_failure"])
 			costs["refurb_costs"] += int(pad_type["refurb_cost_after_failure"])
+			if bool(launch.get("insured", false)):  # spec 003 decision 1: failure only
+				var payout := LaunchRules.insurance_payout(data.launchers[model_id], data)
+				state.money += payout
+				events.append(_event("insurance_payout", {"launch_id": launch["id"], "amount": payout}))
 		state.launchers.erase(launcher)  # consumed in both cases
 		state.launches.erase(launch)
 		start_refurbishment(pad, state.day + refurb_days)

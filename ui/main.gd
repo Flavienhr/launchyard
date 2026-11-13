@@ -2,8 +2,6 @@ extends Control
 ## Main screen: displays the sim state and sends commands. No game rules here:
 ## every derived number comes from SimQueries / Simulation read-only queries.
 
-const ORDER_QUANTITY := 10  # UI convenience (button size), not a balance value
-
 const COLOR_DIM := "#7A8FA3"
 const COLOR_OK := "#5BE49B"
 const COLOR_WARN := "#FFB547"
@@ -59,6 +57,7 @@ var _sel_launcher := -1
 var _sel_pad := -1
 var _sel_contract := -1
 var _sel_day := -1
+var _sel_insured := false
 
 @onready var _day_label: Label = %DayLabel
 @onready var _money_label: Label = %MoneyLabel
@@ -373,13 +372,19 @@ func _build_bom_grid(card: VBoxContainer, rows: Array) -> void:
 		_grid_label(grid, str(entry["on_order"]))
 		_grid_label(grid, str(missing) if missing > 0 else "–", &"DangerLabel" if missing > 0 else &"DimLabel")
 		var offers := SimQueries.supplier_offers(session.data, entry["component_id"])
-		if missing > 0 and not offers.is_empty():
-			var offer: Dictionary = offers[0]
-			var button := _button(grid, tr("Commander %d (%s)") % [missing, offer["supplier_name"]],
-				func() -> void: _send(Command.order(offer["supplier_id"], entry["component_id"], missing)))
-			button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		else:
+		if offers.is_empty():
 			_grid_label(grid, "")
+			continue
+		var offer: Dictionary = offers[0]
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 6)
+		grid.add_child(cell)
+		if missing > 0:
+			var quick := _button(cell, tr("Le manque (%d)") % missing,
+				func() -> void: _send(Command.order(offer["supplier_id"], entry["component_id"], missing)))
+			quick.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			quick.tooltip_text = tr("Commander exactement ce qui manque")
+		_order_controls(cell, offer["supplier_id"], entry["component_id"], maxi(1, missing))
 
 
 func _grid_label(grid: Container, text: String, variation := &"", expand := false) -> Label:
@@ -416,8 +421,9 @@ func _build_supply(box: VBoxContainer) -> void:
 	var data := session.data
 	var stock_card := _card(box)
 	_label(stock_card, tr("STOCK"), &"HeadingLabel")
-	_label(stock_card, tr("Occupation : %d / %d") % [
-		Simulation.storage_used(state, data), Simulation.storage_capacity(state, data)], &"DimLabel")
+	_label(stock_card, tr("Occupation : %d / %d · %d places libres") % [
+		Simulation.storage_used(state, data), Simulation.storage_capacity(state, data),
+		Simulation.storage_capacity(state, data) - Simulation.storage_used(state, data)], &"DimLabel")
 	var lines: PackedStringArray = []
 	for component_id in state.stock:
 		if state.stock[component_id] > 0:
@@ -434,15 +440,80 @@ func _build_supply(box: VBoxContainer) -> void:
 
 	var catalog_card := _card(box)
 	_label(catalog_card, tr("FOURNISSEURS"), &"HeadingLabel")
+	var grid := GridContainer.new()
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 6)
+	catalog_card.add_child(grid)
+	for title in [tr("Fournisseur"), tr("Composant"), tr("Prix (cr) · délai"), tr("Quantité"), ""]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Fournisseur"))
 	for supplier_id in data.suppliers:
 		var supplier: Dictionary = data.suppliers[supplier_id]
-		_label(catalog_card, tr("%s · %d %% de retards") % [supplier["name"], roundi(supplier["delay_chance"] * 100)],
-			&"DimLabel")
 		for entry in supplier["catalog"]:
-			_button(catalog_card, tr("Commander %d × %s : %s cr, %d j") % [
-				ORDER_QUANTITY, _component_name(entry["component_id"]),
-				_fmt(ORDER_QUANTITY * int(entry["unit_price"])), entry["lead_time_days"]],
-				func() -> void: _send(Command.order(supplier_id, entry["component_id"], ORDER_QUANTITY)))
+			var component_id: String = entry["component_id"]
+			var name_label := _grid_label(grid, supplier["name"], &"", true)
+			name_label.tooltip_text = tr("%d %% de retards") % roundi(supplier["delay_chance"] * 100)
+			name_label.mouse_filter = Control.MOUSE_FILTER_STOP
+			_grid_label(grid, _component_name(component_id))
+			_grid_label(grid, tr("%s/u · %d j") % [_fmt(entry["unit_price"]), entry["lead_time_days"]])
+			var spin := _quantity_spin(grid, 1)
+			var button := Button.new()
+			button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			grid.add_child(button)
+			_bind_order(button, spin, null, supplier_id, component_id)
+
+
+## SpinBox (min 1, step 1) with a fixed width so grid columns stay aligned.
+func _quantity_spin(parent: Control, value: int) -> SpinBox:
+	var spin := SpinBox.new()
+	spin.min_value = 1
+	spin.max_value = 99
+	spin.step = 1
+	spin.value = value
+	spin.custom_minimum_size = Vector2(80, 0)
+	spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	parent.add_child(spin)
+	return spin
+
+
+## Free-quantity order (Nomenclature): SpinBox + "Commander"; the live cost
+## and warehouse room are in the tooltip to keep the row compact.
+func _order_controls(parent: Control, supplier_id: String, component_id: String, default_qty: int) -> void:
+	var spin := _quantity_spin(parent, default_qty)
+	var button := Button.new()
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	parent.add_child(button)
+	_bind_order(button, spin, null, supplier_id, component_id, false)
+
+
+## Keeps the button label (total cost), its enabled state, tooltip and the
+## warehouse-room label in sync with the spinner. All numbers come from SimQueries.
+func _bind_order(button: Button, spin: SpinBox, room: Label, supplier_id: String, component_id: String,
+		show_cost := true) -> void:
+	var refresh := func(_v := 0.0) -> void:
+		var quote := SimQueries.order_quote(session.state, session.data, supplier_id, component_id, int(spin.value))
+		button.text = tr("Commander (%s)") % _fmt(quote["total_cost"]) if show_cost else tr("Commander")
+		button.disabled = not quote["affordable"]
+		var tips: PackedStringArray = []
+		if not quote["affordable"]:
+			tips.append(tr("Trésorerie insuffisante : %s cr requis, %s cr disponibles.") % [
+				_fmt(quote["total_cost"]), _fmt(session.state.money)])
+		if not quote["fits"]:
+			tips.append(tr("Entrepôt trop plein : la livraison attendra au portail."))
+		tips.insert(0, tr("Coût : %s cr · %d places libres dans l'entrepôt") % [
+			_fmt(quote["total_cost"]), quote["free_storage"]])
+		if quote["fits"]:
+			button.remove_theme_color_override("font_color")
+		else:
+			button.add_theme_color_override("font_color", Color(COLOR_WARN))
+		button.tooltip_text = "\n".join(tips)
+		if room == null:
+			return
+		room.text = tr("%d places libres") % quote["free_storage"]
+		room.theme_type_variation = &"DimLabel" if quote["fits"] else &"DangerLabel"
+	spin.value_changed.connect(refresh)
+	button.pressed.connect(func() -> void: _send(Command.order(supplier_id, component_id, int(spin.value))))
+	refresh.call()
 
 
 # --- Contracts tab ----------------------------------------------------------
@@ -544,7 +615,7 @@ func _build_active_grid(card: VBoxContainer, active: Array) -> void:
 
 func _build_history_grid(card: VBoxContainer, history: Array) -> void:
 	var grid := GridContainer.new()
-	grid.columns = 4
+	grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 16)
 	grid.add_theme_constant_override("v_separation", 4)
 	card.add_child(grid)
@@ -672,15 +743,41 @@ func _build_schedule_form(box: VBoxContainer) -> void:
 	_label(card, tr("Fiabilité actuelle du modèle : %d %%") % roundi(plan["reliability"] * 100))
 	_label(card, tr("Marge avant la date limite : %d j (limite : jour %d)") % [plan["margin_days"], plan["max_day"]],
 		&"DangerLabel" if plan["margin_days"] < 0 else &"DimLabel")
+	_build_insurance_row(card, state)
 	if plan["error"] != "":
 		_label(card, tr(REJECT_REASONS.get(plan["error"], plan["error"])), &"WarnLabel")
 	var go := _button(card, tr("Planifier le tir"), func() -> void:
-		_send(Command.schedule_launch(_sel_launcher, _sel_pad, _sel_contract, _sel_day))
+		_send(Command.schedule_launch(_sel_launcher, _sel_pad, _sel_contract, _sel_day, _sel_insured))
 		_sel_day = -1
 		_sel_pad = -1
-		_sel_contract = -1, plan["error"] != "")
+		_sel_contract = -1
+		_sel_insured = false, plan["error"] != "")
 	go.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 
+
+
+## Insurance (spec 003 decision 1): premium now, partial refund of a kit if the launch fails.
+func _build_insurance_row(card: VBoxContainer, state: GameState) -> void:
+	var contract := ContractRules.find(state, _sel_contract)
+	var launcher := {}
+	for l in state.launchers:
+		if l["id"] == _sel_launcher:
+			launcher = l
+	if contract.is_empty() or launcher.is_empty() or not session.data.contracts.has("insurance_premium_pct"):
+		return
+	var premium := LaunchRules.insurance_premium(contract, session.data)
+	var payout := LaunchRules.insurance_payout(session.data.launchers[launcher["model"]], session.data)
+	var check := CheckBox.new()
+	check.text = tr("Assurer ce tir : prime %s cr maintenant · %s cr remboursés si le tir échoue") % [
+		_fmt(premium), _fmt(payout)]
+	check.button_pressed = _sel_insured
+	check.disabled = premium > state.money
+	if check.disabled:
+		check.tooltip_text = tr("Trésorerie insuffisante pour la prime.")
+	check.toggled.connect(func(on: bool) -> void:
+		_sel_insured = on
+		_refresh())
+	card.add_child(check)
 
 ## The current choice if it is an enabled option, else the first enabled option id. -1 if none.
 func _pick_option(options: Array, current: int) -> int:
@@ -805,6 +902,10 @@ func _log_event(e: Dictionary) -> void:
 		"launch_failed":
 			_log_line(tr("[ÉCHEC] Tir #%d échoué : le lanceur est perdu. Contrat #%d (fiabilité %d %%)") % [
 				e["launch_id"], e["contract_id"], roundi(e["reliability"] * 100)], COLOR_DANGER)
+		"insurance_paid":
+			_log_line(tr("Tir #%d assuré : prime -%s cr") % [e["launch_id"], _fmt(e["premium"])], COLOR_ACCENT)
+		"insurance_payout":
+			_log_line(tr("Assurance : +%s cr remboursés pour le tir #%d") % [_fmt(e["amount"]), e["launch_id"]], COLOR_OK)
 		"facility_build_started":
 			_log_line(tr("Construction : %s (-%s cr), prête au jour %d") % [
 				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)

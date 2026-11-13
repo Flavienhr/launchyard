@@ -5,6 +5,8 @@
   "offer_validity_days": 8,
   "advance_pct": 20,
   "penalty_pct": 30,
+  "insurance_premium_pct": 8,
+  "insurance_payout_pct": 60,
   "max_active_contracts": 3,
   "payment_rounding": 1000,
   "mass_step_kg": 50,
