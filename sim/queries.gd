@@ -308,3 +308,241 @@ static func reputation_info(state: GameState, data: GameData) -> Dictionary:
 		"next_unlock_at": next,
 		"next_unlock_orbit": orbit,
 	}
+
+
+# --- Launches (spec 003 UI) ------------------------------------------------------
+# Read-only helpers: same checks as the schedule_launch / reschedule_launch
+# commands, so that the UI can grey out and explain instead of computing rules.
+
+static func _launcher_by_id(state: GameState, launcher_id: int) -> Dictionary:
+	for launcher in state.launchers:
+		if launcher["id"] == launcher_id:
+			return launcher
+	return {}
+
+
+static func _facility_by_id(state: GameState, facility_id: int) -> Dictionary:
+	for facility in state.facilities:
+		if facility["id"] == facility_id:
+			return facility
+	return {}
+
+
+static func _contract_by_id(state: GameState, contract_id: int) -> Dictionary:
+	for contract in state.contracts:
+		if contract["id"] == contract_id:
+			return contract
+	return {}
+
+
+static func _launch_of(state: GameState, key: String, id: int) -> Dictionary:
+	for launch in state.launches:
+		if launch[key] == id:
+			return launch
+	return {}
+
+
+## Current reliability of a launcher model (base + gain * successes, capped).
+static func model_reliability(state: GameState, data: GameData, model_id: String) -> float:
+	var successes: int = int(state.model_stats.get(model_id, {}).get("successes", 0))
+	return LaunchRules.model_reliability(data.launchers[model_id], successes)
+
+
+## {season, season_name, scrub_chance} of a day at the active site.
+static func weather_risk(data: GameData, day: int) -> Dictionary:
+	var site := data.active_site()
+	var season := LaunchRules.season_of(day, site)
+	return {
+		"season": season,
+		"season_name": site["season_names"][season],
+		"scrub_chance": float(site["scrub_chance_by_season"][season]),
+	}
+
+
+## Launch pads in id order: id, name, status (building/ready), pad_state
+## (free/occupied/refurbishing), ready_day, refurb_until_day, launcher_id and
+## launcher_model (occupied only, "" otherwise), launch_id / launch_day (-1 if none).
+static func pad_infos(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for facility in state.facilities:
+		if not data.facilities[facility["type"]].has("rollout_days"):
+			continue
+		var info := {
+			"id": facility["id"],
+			"name": data.facilities[facility["type"]]["name"],
+			"status": facility["status"],
+			"pad_state": facility.get("pad_state", "free"),
+			"ready_day": facility["ready_day"],
+			"refurb_until_day": facility.get("refurb_until_day", 0),
+			"launcher_id": facility.get("launcher_id", 0),
+			"launcher_model": "",
+			"launch_id": -1,
+			"launch_day": -1,
+		}
+		var launcher := _launcher_by_id(state, int(info["launcher_id"]))
+		if not launcher.is_empty():
+			info["launcher_model"] = launcher["model"]
+		var launch := _launch_of(state, "pad_id", facility["id"])
+		if not launch.is_empty():
+			info["launch_id"] = launch["id"]
+			info["launch_day"] = launch["launch_day"]
+		out.append(info)
+	return out
+
+
+## Launchers without a scheduled launch: id, model, reliability, pad_id (-1 when
+## still in the hall), location_name (facility holding it).
+static func ready_launchers(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for launcher in state.launchers:
+		if not _launch_of(state, "launcher_id", launcher["id"]).is_empty():
+			continue
+		var location := _facility_by_id(state, int(launcher["location_facility_id"]))
+		var on_pad: bool = not location.is_empty() and data.facilities[location["type"]].has("rollout_days")
+		out.append({
+			"id": launcher["id"],
+			"model": launcher["model"],
+			"reliability": model_reliability(state, data, launcher["model"]),
+			"pad_id": location["id"] if on_pad else -1,
+			"location_name": data.facilities[location["type"]]["name"] if not location.is_empty() else "",
+		})
+	return out
+
+
+## Pads a launcher could be scheduled on: pad fields plus ok and reason
+## (the rejection reason schedule_launch would give, "" when ok).
+static func launch_pad_options(state: GameState, data: GameData, launcher_id: int) -> Array:
+	var out: Array = []
+	var launcher := _launcher_by_id(state, launcher_id)
+	var pads := pad_infos(state, data)
+	var on_a_pad := false
+	for pad in pads:
+		if launcher_id != 0 and pad["launcher_id"] == launcher_id:
+			on_a_pad = true
+	for pad in pads:
+		var on_pad: bool = pad["launcher_id"] == launcher_id
+		var reason := ""
+		if launcher.is_empty():
+			reason = "launcher_unavailable"
+		elif pad["status"] != "ready":
+			reason = "pad_unavailable"
+		elif not (pad["pad_state"] == "free" or (pad["pad_state"] == "occupied" and on_pad)):
+			reason = "pad_unavailable"
+		elif on_a_pad and not on_pad:
+			reason = "pad_unavailable"
+		var option: Dictionary = pad.duplicate()
+		option["ok"] = reason == ""
+		option["reason"] = reason
+		out.append(option)
+	return out
+
+
+## Active contracts without launch, ascending deadline, with ok and reason
+## (orbit_unreachable / payload_too_heavy / "" when the launcher can fly it).
+static func launch_contract_options(state: GameState, data: GameData, launcher_id: int) -> Array:
+	var out: Array = []
+	var launcher := _launcher_by_id(state, launcher_id)
+	var site := data.active_site()
+	for contract in active_contracts(state, data):
+		if contract["launch_id"] >= 0:
+			continue
+		var reason := ""
+		var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
+		if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
+			reason = "orbit_unreachable"
+		elif not launcher.is_empty() and int(contract["payload_kg"]) > LaunchRules.payload_capacity(
+				data.launchers[launcher["model"]], contract["orbit"], site):
+			reason = "payload_too_heavy"
+		var option: Dictionary = contract.duplicate()
+		option["ok"] = reason == ""
+		option["reason"] = reason
+		out.append(option)
+	return out
+
+
+## Earliest launch day for a launcher on a pad: 1 day if it already stands on it,
+## else the pad rollout time. Falls back to tomorrow when the pad is unknown.
+static func min_launch_day(state: GameState, data: GameData, launcher_id: int, pad_id: int) -> int:
+	var pad := _facility_by_id(state, pad_id)
+	if pad.is_empty() or not data.facilities[pad["type"]].has("rollout_days"):
+		return state.day + 1
+	if pad.get("launcher_id", 0) == launcher_id:
+		return state.day + 1
+	return state.day + int(data.facilities[pad["type"]]["rollout_days"])
+
+
+## What the player needs to see before choosing a day: min_day, max_day (contract
+## deadline, -1 if unknown), margin_days (deadline - day), season_name,
+## scrub_chance of that day, reliability of the model, and error (the rejection
+## reason schedule_launch would give for this day, "" if it would be accepted).
+static func launch_plan(state: GameState, data: GameData, launcher_id: int, pad_id: int,
+		contract_id: int, day: int) -> Dictionary:
+	var launcher := _launcher_by_id(state, launcher_id)
+	var contract := _contract_by_id(state, contract_id)
+	var weather := weather_risk(data, day)
+	var plan := {
+		"min_day": min_launch_day(state, data, launcher_id, pad_id),
+		"max_day": int(contract["deadline_day"]) if not contract.is_empty() else -1,
+		"margin_days": int(contract["deadline_day"]) - day if not contract.is_empty() else 0,
+		"season_name": weather["season_name"],
+		"scrub_chance": weather["scrub_chance"],
+		"reliability": model_reliability(state, data, launcher["model"]) if not launcher.is_empty() else 0.0,
+		"error": "",
+	}
+	if launcher.is_empty():
+		plan["error"] = "launcher_unavailable"
+	elif contract.is_empty():
+		plan["error"] = "contract_unavailable"
+	elif day < plan["min_day"]:
+		plan["error"] = "too_early"
+	elif day > plan["max_day"]:
+		plan["error"] = "after_deadline"
+	else:
+		for option in launch_pad_options(state, data, launcher_id):
+			if option["id"] == pad_id and not option["ok"]:
+				plan["error"] = option["reason"]
+		for option in launch_contract_options(state, data, launcher_id):
+			if option["id"] == contract_id and not option["ok"]:
+				plan["error"] = option["reason"]
+	return plan
+
+
+## Scheduled launches by day then id: launch fields plus launcher_model, pad_name,
+## client, orbit, deadline_day, margin_days (deadline - launch_day), season_name,
+## scrub_chance (of launch_day) and reliability.
+static func scheduled_launches(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for launch in state.launches:
+		var launcher := _launcher_by_id(state, launch["launcher_id"])
+		var pad := _facility_by_id(state, launch["pad_id"])
+		var contract := _contract_by_id(state, launch["contract_id"])
+		var weather := weather_risk(data, launch["launch_day"])
+		var info: Dictionary = launch.duplicate()
+		info["launcher_model"] = launcher.get("model", "")
+		info["pad_name"] = data.facilities[pad["type"]]["name"] if not pad.is_empty() else ""
+		info["client"] = contract.get("client", "")
+		info["orbit"] = contract.get("orbit", "")
+		info["deadline_day"] = int(contract.get("deadline_day", launch["launch_day"]))
+		info["margin_days"] = info["deadline_day"] - launch["launch_day"]
+		info["season_name"] = weather["season_name"]
+		info["scrub_chance"] = weather["scrub_chance"]
+		info["reliability"] = model_reliability(state, data, info["launcher_model"]) if info["launcher_model"] != "" else 0.0
+		out.append(info)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["launch_day"] != b["launch_day"]:
+			return a["launch_day"] < b["launch_day"]
+		return a["id"] < b["id"])
+	return out
+
+
+## Spec 004 display: {game_over, warning, days_in_debt, days_left}. warning is on
+## from bankruptcy_warning_days of debt; days_left counts down to game over.
+static func bankruptcy_status(state: GameState, data: GameData) -> Dictionary:
+	var grace := int(data.rules.get("bankruptcy_grace_days", 0))
+	var warning_days := int(data.rules.get("bankruptcy_warning_days", 0))
+	return {
+		"game_over": state.game_over,
+		"warning": not data.rules.is_empty() and state.days_in_debt > 0 and state.days_in_debt >= warning_days,
+		"days_in_debt": state.days_in_debt,
+		"days_left": maxi(grace - state.days_in_debt, 0),
+	}

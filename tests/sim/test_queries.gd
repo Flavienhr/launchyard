@@ -194,3 +194,115 @@ func test_reputation_info_next_unlock() -> void:
 	assert_eq(info["next_unlock_at"], 60)
 	s[0].reputation = 70
 	assert_eq(SimQueries.reputation_info(s[0], s[1])["next_unlock_at"], -1)
+
+
+# --- Launch queries (spec 003 UI) ---------------------------------------------
+
+func _launch_setup(orbit := "leo", payload := 1_000) -> Array:
+	var data := F.data()
+	data.facilities["pad"] = {"id": "pad", "name": "Pad", "upkeep_per_day": 0, "rollout_days": 2,
+		"scrub_recycle_days": 1, "scrub_cost": 10, "refurb_days": 3, "refurb_cost": 100,
+		"refurb_days_after_failure": 6, "refurb_cost_after_failure": 300}
+	data.start = {"money": F.START_MONEY, "facilities": ["warehouse", "hall", "pad"], "site": F.SITE_ID}
+	var state := Simulation.new_game(data, 1)
+	state.launchers.append({"id": 1, "model": "l1", "location_facility_id": _fac(state, "hall")["id"]})
+	state.contracts.append({"id": 1, "client": "Acme", "orbit": orbit, "payload_kg": payload, "payment": 100_000,
+		"advance": 0, "penalty": 0, "deadline_day": 20, "status": ContractRules.ACTIVE, "offer_expires_day": 0})
+	return [state, data]
+
+
+func test_weather_risk_follows_season_of_the_day() -> void:
+	var data := F.data()
+	var r := SimQueries.weather_risk(data, 12)
+	assert_eq(r["season_name"], "b")
+	assert_eq(r["scrub_chance"], F.SCRUB_BY_SEASON[1])
+	assert_eq(SimQueries.weather_risk(data, 9)["scrub_chance"], F.SCRUB_BY_SEASON[0])
+
+
+func test_model_reliability_grows_with_successes() -> void:
+	var s := _launch_setup()
+	assert_eq(SimQueries.model_reliability(s[0], s[1], "l1"), 0.5)
+	s[0].model_stats["l1"] = {"successes": 2}
+	assert_eq(SimQueries.model_reliability(s[0], s[1], "l1"), 0.7)
+
+
+func test_pad_infos_free_occupied_refurbishing() -> void:
+	var s := _launch_setup()
+	var pad := _fac(s[0], "pad")
+	var info := SimQueries.pad_infos(s[0], s[1])
+	assert_eq(info.size(), 1)
+	assert_eq(info[0]["pad_state"], "free")
+	Simulation.apply_command(s[0], Command.schedule_launch(1, pad["id"], 1, 2), s[1])
+	info = SimQueries.pad_infos(s[0], s[1])
+	assert_eq(info[0]["pad_state"], "occupied")
+	assert_eq(info[0]["launcher_model"], "l1")
+	assert_eq(info[0]["launch_day"], 2)
+	Simulation.start_refurbishment(pad, 9)
+	info = SimQueries.pad_infos(s[0], s[1])
+	assert_eq(info[0]["pad_state"], "refurbishing")
+	assert_eq(info[0]["refurb_until_day"], 9)
+
+
+func test_ready_launchers_excludes_scheduled_ones() -> void:
+	var s := _launch_setup()
+	var ready := SimQueries.ready_launchers(s[0], s[1])
+	assert_eq(ready.size(), 1)
+	assert_eq(ready[0]["pad_id"], -1)
+	Simulation.apply_command(s[0], Command.schedule_launch(1, _fac(s[0], "pad")["id"], 1, 2), s[1])
+	assert_eq(SimQueries.ready_launchers(s[0], s[1]).size(), 0)
+
+
+func test_min_launch_day_rollout_then_one_day_on_pad() -> void:
+	var s := _launch_setup()
+	var pad := _fac(s[0], "pad")
+	assert_eq(SimQueries.min_launch_day(s[0], s[1], 1, pad["id"]), 2)
+	Simulation.apply_command(s[0], Command.schedule_launch(1, pad["id"], 1, 2), s[1])
+	assert_eq(SimQueries.min_launch_day(s[0], s[1], 1, pad["id"]), 1)
+
+
+func test_launch_contract_options_explain_incompatibility() -> void:
+	var s := _launch_setup("sso")
+	var options := SimQueries.launch_contract_options(s[0], s[1], 1)
+	assert_eq(options.size(), 1)
+	assert_true(not options[0]["ok"])
+	assert_eq(options[0]["reason"], "orbit_unreachable")
+	var heavy := _launch_setup("leo", 5_000)
+	assert_eq(SimQueries.launch_contract_options(heavy[0], heavy[1], 1)[0]["reason"], "payload_too_heavy")
+
+
+func test_launch_plan_matches_schedule_launch() -> void:
+	var s := _launch_setup()
+	var pad_id: int = _fac(s[0], "pad")["id"]
+	var plan := SimQueries.launch_plan(s[0], s[1], 1, pad_id, 1, 12)
+	assert_eq(plan["error"], "")
+	assert_eq(plan["season_name"], "b")
+	assert_eq(plan["scrub_chance"], F.SCRUB_BY_SEASON[1])
+	assert_eq(plan["reliability"], 0.5)
+	assert_eq(plan["margin_days"], 8)
+	assert_eq(SimQueries.launch_plan(s[0], s[1], 1, pad_id, 1, 1)["error"], "too_early")
+	assert_eq(SimQueries.launch_plan(s[0], s[1], 1, pad_id, 1, 21)["error"], "after_deadline")
+	var events := Simulation.apply_command(s[0], Command.schedule_launch(1, pad_id, 1, 12), s[1])
+	assert_eq(events[0]["type"], "launch_scheduled")
+
+
+func test_scheduled_launches_carry_weather_and_margin() -> void:
+	var s := _launch_setup()
+	Simulation.apply_command(s[0], Command.schedule_launch(1, _fac(s[0], "pad")["id"], 1, 12), s[1])
+	var list := SimQueries.scheduled_launches(s[0], s[1])
+	assert_eq(list.size(), 1)
+	assert_eq(list[0]["client"], "Acme")
+	assert_eq(list[0]["margin_days"], 8)
+	assert_eq(list[0]["scrub_chance"], F.SCRUB_BY_SEASON[1])
+
+
+func test_bankruptcy_status_warning_and_days_left() -> void:
+	var s := _launch_setup()
+	var data: GameData = s[1]
+	data.rules = {"bankruptcy_grace_days": 10, "bankruptcy_warning_days": 7}
+	var state: GameState = s[0]
+	state.days_in_debt = 6
+	assert_true(not SimQueries.bankruptcy_status(state, data)["warning"])
+	state.days_in_debt = 7
+	var status := SimQueries.bankruptcy_status(state, data)
+	assert_true(status["warning"])
+	assert_eq(status["days_left"], 3)
