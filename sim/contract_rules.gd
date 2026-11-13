@@ -108,3 +108,19 @@ static func best_capacity(data: GameData, orbit_id: String, site: Dictionary) ->
 ## `value` clamped to [reputation_min, reputation_max] (spec 002 R5).
 static func clamp_reputation(data: GameData, value: int) -> int:
 	return clampi(value, int(data.contracts["reputation_min"]), int(data.contracts["reputation_max"]))
+
+
+## Why an offer cannot be signed right now ("" = it can). Spec 002 R3, checks in
+## spec order. Single source of truth for the sim (accept_contract) and the UI.
+static func acceptance_error(state: GameState, data: GameData, contract: Dictionary) -> String:
+	if contract.is_empty() or contract["status"] != OFFER:
+		return "not_an_offer"
+	if active_count(state) >= int(data.contracts["max_active_contracts"]):
+		return "too_many_contracts"
+	var site := data.active_site()
+	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
+	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
+		return "orbit_unreachable"
+	if int(contract["payload_kg"]) > best_capacity(data, contract["orbit"], site):
+		return "payload_too_heavy"
+	return ""

@@ -225,17 +225,8 @@ const HISTORY_STATUSES := ["completed", "failed", "expired"]
 ## Whether accept_contract would be accepted now: {ok, reason}. Same checks and
 ## order as Simulation._apply_accept_contract (reason = its rejection reason).
 static func can_accept(state: GameState, data: GameData, contract: Dictionary) -> Dictionary:
-	if contract["status"] != ContractRules.OFFER:
-		return {"ok": false, "reason": "not_an_offer"}
-	if ContractRules.active_count(state) >= int(data.contracts["max_active_contracts"]):
-		return {"ok": false, "reason": "too_many_contracts"}
-	var site := data.active_site()
-	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
-	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
-		return {"ok": false, "reason": "orbit_unreachable"}
-	if int(contract["payload_kg"]) > ContractRules.best_capacity(data, contract["orbit"], site):
-		return {"ok": false, "reason": "payload_too_heavy"}
-	return {"ok": true, "reason": ""}
+	var error := ContractRules.acceptance_error(state, data, contract)
+	return {"ok": error == "", "reason": error}
 
 
 ## Open offers (ascending id): contract fields plus can_accept, reject_reason,
