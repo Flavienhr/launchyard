@@ -9,6 +9,10 @@ const COMPLETED := "completed"
 const FAILED := "failed"
 const EXPIRED := "expired"
 
+# Failure reasons (spec 002 R4).
+const LAUNCH_FAILED := "launch_failed"
+const DEADLINE_MISSED := "deadline_missed"
+
 
 ## Templates a player with `reputation` may be offered from `site`.
 static func eligible_templates(data: GameData, reputation: int, site: Dictionary) -> Array:
@@ -76,3 +80,31 @@ static func visible_offers(state: GameState) -> int:
 		if contract["status"] == OFFER:
 			count += 1
 	return count
+
+
+static func active_count(state: GameState) -> int:
+	var count := 0
+	for contract in state.contracts:
+		if contract["status"] == ACTIVE:
+			count += 1
+	return count
+
+
+static func find(state: GameState, contract_id: int) -> Dictionary:
+	for contract in state.contracts:
+		if contract["id"] == contract_id:
+			return contract
+	return {}
+
+
+## Largest payload any launcher model can lift to `orbit_id` from `site`.
+static func best_capacity(data: GameData, orbit_id: String, site: Dictionary) -> int:
+	var best := 0
+	for model_id in data.launchers:
+		best = maxi(best, LaunchRules.payload_capacity(data.launchers[model_id], orbit_id, site))
+	return best
+
+
+## `value` clamped to [reputation_min, reputation_max] (spec 002 R5).
+static func clamp_reputation(data: GameData, value: int) -> int:
+	return clampi(value, int(data.contracts["reputation_min"]), int(data.contracts["reputation_max"]))
