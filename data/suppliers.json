@@ -19,6 +19,43 @@
         { "component_id": "steel_sheet", "unit_price": 260, "lead_time_days": 1 }
       ],
       "_note": "Cher, rapide et fiable : premier dilemme acheter vite ou acheter moins cher."
+    },
+    {
+      "id": "brannoc_propulsion",
+      "name": "Brannoc Propulsion",
+      "delay_chance": 0.2,
+      "delay_days": 4,
+      "catalog": [
+        { "component_id": "engine", "unit_price": 12000, "lead_time_days": 10 }
+      ],
+      "_note": "Unique fournisseur de moteurs : dépendance volontaire, composant critique en délai (spec 001)."
+    },
+    {
+      "id": "halvard_tanks",
+      "name": "Halvard Tanks",
+      "delay_chance": 0.15,
+      "delay_days": 3,
+      "catalog": [
+        { "component_id": "tank", "unit_price": 9000, "lead_time_days": 6 }
+      ]
+    },
+    {
+      "id": "vey_avionique",
+      "name": "Vey Avionique",
+      "delay_chance": 0.05,
+      "delay_days": 1,
+      "catalog": [
+        { "component_id": "avionics", "unit_price": 6000, "lead_time_days": 5 }
+      ]
+    },
+    {
+      "id": "corrandi_composites",
+      "name": "Corrandi Composites",
+      "delay_chance": 0.1,
+      "delay_days": 2,
+      "catalog": [
+        { "component_id": "fairing", "unit_price": 5000, "lead_time_days": 7 }
+      ]
     }
   ]
 }

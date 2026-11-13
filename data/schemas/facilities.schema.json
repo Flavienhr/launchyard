@@ -32,6 +32,61 @@
           "storage_capacity": {
             "type": "integer",
             "minimum": 0
+          },
+          "buildable": {
+            "type": "boolean"
+          },
+          "build_cost": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "build_days": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "productivity_per_slot": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "launcher_capacity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rollout_days": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "scrub_recycle_days": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "scrub_cost": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refurb_days": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refurb_cost": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refurb_days_after_failure": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refurb_cost_after_failure": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "patternProperties": {

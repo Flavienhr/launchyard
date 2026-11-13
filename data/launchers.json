@@ -1,0 +1,13 @@
+{
+  "launchers": [
+    {
+      "id": "l1",
+      "recipe_id": "assemble_l1",
+      "payload_kg": { "leo": 2000, "sso": 1400, "gto": 500 },
+      "reliability_base": 0.85,
+      "reliability_gain_per_success": 0.02,
+      "reliability_max": 0.97,
+      "_note": "Spec 003, tableau launchers.json. Les ids d'orbite seront validés avec orbits.json (issue 13)."
+    }
+  ]
+}

@@ -58,16 +58,67 @@ def ids(docs: dict, key: str, errors: list[str]) -> set[str]:
 def check_references(docs: dict, errors: list[str]) -> None:
     components = ids(docs, "components", errors)
     facilities = ids(docs, "facilities", errors)
+    launchers = ids(docs, "launchers", errors)
+    recipes = ids(docs, "recipes", errors)
     ids(docs, "suppliers", errors)
+    facility_by_id = {
+        f["id"]: f for f in docs.get("facilities", {}).get("facilities", [])
+        if isinstance(f, dict) and "id" in f
+    }
+
     for supplier in docs.get("suppliers", {}).get("suppliers", []):
         for entry in supplier.get("catalog", []):
             if entry.get("component_id") not in components:
                 errors.append(
                     f"suppliers.json: {supplier.get('id')} vend un composant inconnu "
                     f"'{entry.get('component_id')}'")
-    for facility_id in docs.get("start", {}).get("facilities", []):
+
+    for recipe in docs.get("recipes", {}).get("recipes", []):
+        rid = recipe.get("id")
+        if recipe.get("facility_type") not in facilities:
+            errors.append(
+                f"recipes.json: {rid} utilise une installation inconnue "
+                f"'{recipe.get('facility_type')}'")
+        for component_id in recipe.get("inputs", {}):
+            if component_id not in components:
+                errors.append(f"recipes.json: {rid} consomme un composant inconnu '{component_id}'")
+        output = recipe.get("output", {})
+        if "component_id" in output and output["component_id"] not in components:
+            errors.append(f"recipes.json: {rid} produit un composant inconnu '{output['component_id']}'")
+        if "launcher_model" in output and output["launcher_model"] not in launchers:
+            errors.append(f"recipes.json: {rid} produit un lanceur inconnu '{output['launcher_model']}'")
+
+    # Lien recette -> lanceur, dans les deux sens.
+    produced_by = {
+        r.get("output", {}).get("launcher_model"): r.get("id")
+        for r in docs.get("recipes", {}).get("recipes", [])
+        if "launcher_model" in r.get("output", {})
+    }
+    for launcher in docs.get("launchers", {}).get("launchers", []):
+        lid = launcher.get("id")
+        if launcher.get("recipe_id") not in recipes:
+            errors.append(f"launchers.json: {lid} pointe une recette inconnue '{launcher.get('recipe_id')}'")
+        elif produced_by.get(lid) != launcher.get("recipe_id"):
+            errors.append(
+                f"launchers.json: {lid} a pour recette '{launcher.get('recipe_id')}' "
+                f"qui ne produit pas ce lanceur")
+
+    start = docs.get("start", {})
+    for facility_id in start.get("facilities", []):
         if facility_id not in facilities:
             errors.append(f"start.json: installation inconnue '{facility_id}'")
+    for facility_id, count in start.get("assignments", {}).items():
+        if facility_id not in start.get("facilities", []):
+            errors.append(f"start.json: affectation sur une installation absente des départs '{facility_id}'")
+            continue
+        slots = facility_by_id.get(facility_id, {}).get("slots", 0)
+        if count > slots:
+            errors.append(
+                f"start.json: {count} techniciens affectés à '{facility_id}' "
+                f"qui n'a que {slots} postes")
+    total = sum(start.get("assignments", {}).values())
+    if "technicians" in start and total > start["technicians"]:
+        errors.append(f"start.json: {total} techniciens affectés pour {start['technicians']} embauchés")
 
 
 def main() -> int:

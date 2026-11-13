@@ -3,7 +3,9 @@
   "type": "object",
   "required": [
     "money",
-    "facilities"
+    "facilities",
+    "technicians",
+    "assignments"
   ],
   "additionalProperties": false,
   "properties": {
@@ -16,6 +18,20 @@
       "items": {
         "type": "string",
         "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "technicians": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "assignments": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
       }
     }
   },

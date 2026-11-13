@@ -6,6 +6,34 @@
       "mass_kg": 500,
       "storage_units": 1,
       "_note": "Matière première des réservoirs (atelier de soudure, phase 2)."
+    },
+    {
+      "id": "tank",
+      "name": "Réservoir",
+      "mass_kg": 1500,
+      "storage_units": 10,
+      "_note": "Achetable ou fabricable (atelier de soudure). Spec 001, R1."
+    },
+    {
+      "id": "engine",
+      "name": "Moteur",
+      "mass_kg": 900,
+      "storage_units": 6,
+      "_note": "Achetable uniquement en phase 2. Spec 001, R1."
+    },
+    {
+      "id": "avionics",
+      "name": "Avionique",
+      "mass_kg": 80,
+      "storage_units": 1,
+      "_note": "Achetable uniquement en phase 2. Spec 001, R1."
+    },
+    {
+      "id": "fairing",
+      "name": "Coiffe",
+      "mass_kg": 600,
+      "storage_units": 12,
+      "_note": "Achetable uniquement en phase 2. Spec 001, R1."
     }
   ]
 }
