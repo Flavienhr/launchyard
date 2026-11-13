@@ -10,6 +10,7 @@ const FIRE := &"fire"
 const ASSIGN_STAFF := &"assign_staff"
 const QUEUE_JOB := &"queue_job"
 const CANCEL_JOB := &"cancel_job"
+const ACCEPT_CONTRACT := &"accept_contract"
 
 var type: StringName
 var args: Dictionary
@@ -52,6 +53,10 @@ static func queue_job(facility_id: int, recipe_id: String, count: int) -> Comman
 
 static func cancel_job(job_id: int) -> Command:
 	return Command.new(CANCEL_JOB, {"job_id": job_id})
+
+
+static func accept_contract(contract_id: int) -> Command:
+	return Command.new(ACCEPT_CONTRACT, {"contract_id": contract_id})
 
 
 func to_dict() -> Dictionary:
