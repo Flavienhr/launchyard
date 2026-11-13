@@ -223,6 +223,12 @@ func _recipe_name(recipe_id: String) -> String:
 func _build_facilities(box: VBoxContainer) -> void:
 	var state := session.state
 	var data := session.data
+	# Staff summary on top: assigning needs free technicians (hired in Construction).
+	var staff: Dictionary = SimQueries.staff_info(state, data)
+	var summary := _row(box)
+	_label(summary, tr("Techniciens : %d embauchés · %d affectés · %d libres") % [
+		staff["hired"], staff["assigned"], staff["free"]],
+		&"WarnLabel" if staff["free"] <= 0 else &"DimLabel")
 	for facility in state.facilities:
 		var info := SimQueries.facility_info(data, facility, state.day)
 		var card := _card(box)
@@ -246,11 +252,20 @@ func _build_facilities(box: VBoxContainer) -> void:
 func _build_staff_row(card: VBoxContainer, info: Dictionary) -> void:
 	var row := _row(card)
 	_label(row, tr("Techniciens : %d / %d postes") % [info["assigned"], info["slots"]])
-	var free: int = SimQueries.staff_info(session.state, session.data)["free"]
+	var staff: Dictionary = SimQueries.staff_info(session.state, session.data)
+	var free: int = staff["free"]
 	_button(row, "−", func() -> void: _send(Command.assign_staff(info["id"], info["assigned"] - 1)),
 		info["assigned"] <= 0)
-	_button(row, "+", func() -> void: _send(Command.assign_staff(info["id"], info["assigned"] + 1)),
+	var plus := _button(row, "+", func() -> void: _send(Command.assign_staff(info["id"], info["assigned"] + 1)),
 		info["assigned"] >= info["slots"] or free <= 0)
+	if info["assigned"] >= info["slots"]:
+		plus.tooltip_text = tr("Tous les postes sont pourvus.")
+	elif free <= 0:
+		# Playtest feedback: a greyed "+" with no explanation was a dead end.
+		plus.tooltip_text = tr("Aucun technicien libre : embauchez-en, ou retirez-en d'une autre installation.")
+		var can_hire: bool = staff["hired"] < staff["max"] and session.state.money >= staff["hire_cost"]
+		_button(row, tr("Embaucher 1 (%s cr)") % _fmt(staff["hire_cost"]),
+			func() -> void: _send(Command.hire(1)), not can_hire)
 
 
 func _build_jobs(card: VBoxContainer, info: Dictionary) -> void:
