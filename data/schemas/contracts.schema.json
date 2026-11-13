@@ -9,6 +9,8 @@
     "offer_validity_days",
     "advance_pct",
     "penalty_pct",
+    "insurance_premium_pct",
+    "insurance_payout_pct",
     "max_active_contracts",
     "payment_rounding",
     "mass_step_kg",
@@ -45,6 +47,16 @@
       "maximum": 100
     },
     "penalty_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "insurance_premium_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "insurance_payout_pct": {
       "type": "integer",
       "minimum": 0,
       "maximum": 100
