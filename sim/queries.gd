@@ -210,3 +210,110 @@ static func hall_occupancy(state: GameState, data: GameData, facility: Dictionar
 		"used": launchers_in(state, facility["id"]).size(),
 		"capacity": int(data.facilities[facility["type"]].get("launcher_capacity", 0)),
 	}
+
+
+# --- Contracts (spec 002 UI) ---------------------------------------------------
+
+## Display thresholds only (no balance effect): a payload at or above
+## NEAR_CAPACITY_PCT % of the best capacity is flagged; an active contract
+## without scheduled launch is flagged URGENT_DAYS days before its deadline.
+const NEAR_CAPACITY_PCT := 80
+const URGENT_DAYS := 10
+const HISTORY_STATUSES := ["completed", "failed", "expired"]
+
+
+## Whether accept_contract would be accepted now: {ok, reason}. Same checks and
+## order as Simulation._apply_accept_contract (reason = its rejection reason).
+static func can_accept(state: GameState, data: GameData, contract: Dictionary) -> Dictionary:
+	if contract["status"] != ContractRules.OFFER:
+		return {"ok": false, "reason": "not_an_offer"}
+	if ContractRules.active_count(state) >= int(data.contracts["max_active_contracts"]):
+		return {"ok": false, "reason": "too_many_contracts"}
+	var site := data.active_site()
+	var orbit: Dictionary = data.orbits.get(contract["orbit"], {})
+	if orbit.is_empty() or not LaunchRules.is_orbit_reachable(orbit, site):
+		return {"ok": false, "reason": "orbit_unreachable"}
+	if int(contract["payload_kg"]) > ContractRules.best_capacity(data, contract["orbit"], site):
+		return {"ok": false, "reason": "payload_too_heavy"}
+	return {"ok": true, "reason": ""}
+
+
+## Open offers (ascending id): contract fields plus can_accept, reject_reason,
+## deadline_days_left, offer_days_left (1 = last day to sign), capacity_kg
+## (best lifter, 0 if none) and near_capacity.
+static func contract_offers(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	if data.contracts.is_empty():
+		return out
+	var site := data.active_site()
+	for contract in state.contracts:
+		if contract["status"] != ContractRules.OFFER:
+			continue
+		var check := can_accept(state, data, contract)
+		var capacity := ContractRules.best_capacity(data, contract["orbit"], site)
+		var info: Dictionary = contract.duplicate()
+		info["can_accept"] = check["ok"]
+		info["reject_reason"] = check["reason"]
+		info["deadline_days_left"] = int(contract["deadline_day"]) - state.day
+		info["offer_days_left"] = int(contract["offer_expires_day"]) - state.day
+		info["capacity_kg"] = capacity
+		info["near_capacity"] = capacity > 0 and int(contract["payload_kg"]) * 100 >= capacity * NEAR_CAPACITY_PCT
+		out.append(info)
+	return out
+
+
+## Active contracts sorted by deadline: contract fields plus deadline_days_left,
+## launch_id / launch_day (-1 when no launch is scheduled), urgent.
+static func active_contracts(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for contract in state.contracts:
+		if contract["status"] != ContractRules.ACTIVE:
+			continue
+		var info: Dictionary = contract.duplicate()
+		var left := int(contract["deadline_day"]) - state.day
+		info["deadline_days_left"] = left
+		info["launch_id"] = -1
+		info["launch_day"] = -1
+		for launch in state.launches:
+			if int(launch["contract_id"]) == int(contract["id"]):
+				info["launch_id"] = launch["id"]
+				info["launch_day"] = launch["launch_day"]
+				break
+		info["urgent"] = info["launch_id"] < 0 and left <= URGENT_DAYS
+		out.append(info)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["deadline_day"] != b["deadline_day"]:
+			return a["deadline_day"] < b["deadline_day"]
+		return a["id"] < b["id"])
+	return out
+
+
+## Last `limit` contracts completed, failed or expired, most recent id first.
+static func contract_history(state: GameState, limit := 8) -> Array:
+	var out: Array = []
+	for i in range(state.contracts.size() - 1, -1, -1):
+		if state.contracts[i]["status"] in HISTORY_STATUSES:
+			out.append(state.contracts[i])
+			if out.size() >= limit:
+				break
+	return out
+
+
+## {value, min, max, next_unlock_at, next_unlock_orbit}: next_unlock_at is the
+## lowest template min_reputation above the current value (-1 if none).
+static func reputation_info(state: GameState, data: GameData) -> Dictionary:
+	var next := -1
+	var orbit := ""
+	if not data.contracts.is_empty():
+		for template in data.contracts["templates"]:
+			var needed := int(template["min_reputation"])
+			if needed > state.reputation and (next < 0 or needed < next):
+				next = needed
+				orbit = template["orbit"]
+	return {
+		"value": state.reputation,
+		"min": int(data.contracts.get("reputation_min", 0)),
+		"max": int(data.contracts.get("reputation_max", 100)),
+		"next_unlock_at": next,
+		"next_unlock_orbit": orbit,
+	}

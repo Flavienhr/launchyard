@@ -53,6 +53,27 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "JOUR 0"
 
+[node name="RepBox" type="HBoxContainer" parent="Margin/Root/Header"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RepTitle" type="Label" parent="Margin/Root/Header/RepBox"]
+layout_mode = 2
+theme_type_variation = &"DimLabel"
+text = "RÉPUTATION"
+
+[node name="RepBar" type="ProgressBar" parent="Margin/Root/Header/RepBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 16)
+layout_mode = 2
+size_flags_vertical = 4
+show_percentage = false
+
+[node name="RepLabel" type="Label" parent="Margin/Root/Header/RepBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+
 [node name="MoneyLabel" type="Label" parent="Margin/Root/Header"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -67,11 +88,10 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 2.3
 
 [node name="Installations" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 3
 
 [node name="FacilitiesBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Installations"]
 unique_name_in_owner = true
@@ -81,7 +101,7 @@ theme_override_constants/separation = 8
 
 [node name="Construction" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 3
 
 [node name="BuildBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Construction"]
 unique_name_in_owner = true
@@ -91,7 +111,7 @@ theme_override_constants/separation = 8
 
 [node name="Nomenclature" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 3
 
 [node name="BomBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Nomenclature"]
 unique_name_in_owner = true
@@ -101,7 +121,7 @@ theme_override_constants/separation = 8
 
 [node name="Fournisseurs" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 3
 
 [node name="CatalogBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Fournisseurs"]
 unique_name_in_owner = true
@@ -109,9 +129,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="LogPanel" type="PanelContainer" parent="Margin/Root/Body"]
+[node name="Contrats" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="ContractsBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Contrats"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="LogPanel" type="PanelContainer" parent="Margin/Root/Body"]
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
 
 [node name="VBox" type="VBoxContainer" parent="Margin/Root/Body/LogPanel"]
 layout_mode = 2
