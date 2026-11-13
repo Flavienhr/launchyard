@@ -1,7 +1,10 @@
 name: CI
 
+# push limité à main : sur une branche de PR, l'événement pull_request suffit
+# (sinon chaque commit déclenche deux runs identiques).
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
