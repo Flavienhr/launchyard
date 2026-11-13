@@ -8,6 +8,8 @@ const BUILD := &"build"
 const HIRE := &"hire"
 const FIRE := &"fire"
 const ASSIGN_STAFF := &"assign_staff"
+const QUEUE_JOB := &"queue_job"
+const CANCEL_JOB := &"cancel_job"
 
 var type: StringName
 var args: Dictionary
@@ -40,6 +42,16 @@ static func fire(count: int) -> Command:
 
 static func assign_staff(facility_id: int, count: int) -> Command:
 	return Command.new(ASSIGN_STAFF, {"facility_id": facility_id, "count": count})
+
+
+static func queue_job(facility_id: int, recipe_id: String, count: int) -> Command:
+	return Command.new(QUEUE_JOB, {
+		"facility_id": facility_id, "recipe_id": recipe_id, "count": count,
+	})
+
+
+static func cancel_job(job_id: int) -> Command:
+	return Command.new(CANCEL_JOB, {"job_id": job_id})
 
 
 func to_dict() -> Dictionary:

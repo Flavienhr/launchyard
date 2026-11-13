@@ -52,6 +52,10 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_fire(state, command.args, data)
 		Command.ASSIGN_STAFF:
 			return _apply_assign_staff(state, command.args, data)
+		Command.QUEUE_JOB:
+			return _apply_queue_job(state, command.args, data)
+		Command.CANCEL_JOB:
+			return _apply_cancel_job(state, command.args)
 	return [_rejected("unknown_command", command)]
 
 
@@ -163,6 +167,66 @@ static func _apply_assign_staff(state: GameState, args: Dictionary, data: GameDa
 	return [_event("staff_assigned", {"facility_id": facility_id, "count": count})]
 
 
+static func _apply_queue_job(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var facility_id := int(args.get("facility_id", 0))
+	var recipe_id: String = args.get("recipe_id", "")
+	var count := int(args.get("count", 0))
+	var command := Command.new(Command.QUEUE_JOB, args)
+	var target := _find_facility(state, facility_id)
+	if target.is_empty():
+		return [_rejected("unknown_facility", command)]
+	if target["status"] != "ready":
+		return [_rejected("facility_not_ready", command)]
+	var recipe: Dictionary = data.recipes.get(recipe_id, {})
+	if recipe.is_empty():
+		return [_rejected("unknown_recipe", command)]
+	if recipe["facility_type"] != target["type"]:
+		return [_rejected("wrong_facility", command)]
+	if count <= 0:
+		return [_rejected("invalid_quantity", command)]
+	if target["jobs"].size() + count > int(data.staff["max_queue_length"]):
+		return [_rejected("queue_full", command)]
+	var events: Array = []
+	for i in count:
+		var job := {
+			"id": state.next_job_id,
+			"recipe_id": recipe_id,
+			"started": false,
+			"progress": 0,
+			"blocked": "",  # last blocking reason already reported ("" = none)
+		}
+		state.next_job_id += 1
+		target["jobs"].append(job)
+		events.append(_event("job_queued", {
+			"job_id": job["id"], "facility_id": facility_id, "recipe_id": recipe_id,
+		}))
+	return events
+
+
+static func _apply_cancel_job(state: GameState, args: Dictionary) -> Array:
+	var job_id := int(args.get("job_id", 0))
+	var command := Command.new(Command.CANCEL_JOB, args)
+	for facility in state.facilities:
+		for i in facility["jobs"].size():
+			var job: Dictionary = facility["jobs"][i]
+			if job["id"] != job_id:
+				continue
+			if job["started"]:
+				return [_rejected("job_started", command)]
+			facility["jobs"].remove_at(i)
+			return [_event("job_cancelled", {
+				"job_id": job_id, "facility_id": facility["id"], "recipe_id": job["recipe_id"],
+			})]
+	return [_rejected("unknown_job", command)]
+
+
+static func _find_facility(state: GameState, facility_id: int) -> Dictionary:
+	for facility in state.facilities:
+		if facility["id"] == facility_id:
+			return facility
+	return {}
+
+
 static func _new_facility(state: GameState, type: String, status: String, ready_day: int) -> Dictionary:
 	var instance := {
 		"id": state.next_facility_id,
@@ -170,7 +234,7 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 		"status": status,
 		"ready_day": ready_day,
 		"assigned": 0,  # technicians assigned (spec 001 R4)
-		"jobs": [],     # job queue: filled by a later issue
+		"jobs": [],     # job queue, see _apply_queue_job (head = active job)
 	}
 	state.next_facility_id += 1
 	return instance
@@ -182,6 +246,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	var events: Array = []
 	events.append_array(_resolve_deliveries(state, data))
 	events.append_array(_resolve_constructions(state))
+	events.append_array(_resolve_production(state, data))
 	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_finances(state, data))
 	state.day += 1
@@ -237,6 +302,94 @@ static func _resolve_constructions(state: GameState) -> Array:
 				"facility_id": facility["id"], "type": facility["type"],
 			}))
 	return events
+
+
+## Step 4 (spec 001 R5). Instances by ascending id (stable stock contention).
+## At most one job completes per instance per day.
+static func _resolve_production(state: GameState, data: GameData) -> Array:
+	var events: Array = []
+	for facility in state.facilities:
+		if facility["status"] != "ready" or facility["jobs"].is_empty():
+			continue
+		var job: Dictionary = facility["jobs"][0]
+		var recipe: Dictionary = data.recipes[job["recipe_id"]]
+		if not job["started"]:
+			if _start_job(state, data, facility, job, recipe, events):
+				continue
+		var def: Dictionary = data.facilities[facility["type"]]
+		if job["progress"] < int(recipe["work_points"]):
+			job["progress"] += mini(int(facility["assigned"]), int(def["slots"])) * int(def["productivity_per_slot"])
+		if job["progress"] >= int(recipe["work_points"]):
+			_finish_job(state, data, facility, job, recipe, events)
+	return events
+
+
+## Returns true if the job stays blocked. Blocking is reported once per reason.
+static func _start_job(state: GameState, data: GameData, facility: Dictionary,
+		job: Dictionary, recipe: Dictionary, events: Array) -> bool:
+	var missing := {}
+	for component_id in recipe["inputs"]:
+		var short := int(recipe["inputs"][component_id]) - int(state.stock.get(component_id, 0))
+		if short > 0:
+			missing[component_id] = short
+	var reason := ""
+	if not missing.is_empty():
+		reason = "missing_inputs"
+	elif recipe["output"].has("launcher_model") and not _hall_has_room(state, data, facility):
+		reason = "hall_occupied"
+	if reason != "":
+		if job["blocked"] != reason:
+			job["blocked"] = reason
+			events.append(_event("job_blocked", {"job_id": job["id"], "reason": reason, "missing": missing}))
+		return true
+	var consumed := {}
+	for component_id in recipe["inputs"]:
+		var qty := int(recipe["inputs"][component_id])
+		state.stock[component_id] = int(state.stock.get(component_id, 0)) - qty
+		consumed[component_id] = qty
+	job["started"] = true
+	job["blocked"] = ""
+	events.append(_event("job_started", {
+		"job_id": job["id"], "facility_id": facility["id"], "consumed": consumed,
+	}))
+	return false
+
+
+static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
+		job: Dictionary, recipe: Dictionary, events: Array) -> void:
+	var output: Dictionary = recipe["output"]
+	if output.has("component_id"):
+		var component_id: String = output["component_id"]
+		var qty := int(output["quantity"])
+		var units := qty * int(data.components[component_id]["storage_units"])
+		if units > storage_capacity(state, data) - storage_used(state, data):
+			if job["blocked"] != "output_blocked":
+				job["blocked"] = "output_blocked"
+				events.append(_event("output_blocked", {"job_id": job["id"], "facility_id": facility["id"]}))
+			return
+		state.stock[component_id] = int(state.stock.get(component_id, 0)) + qty
+	else:
+		var launcher := {
+			"id": state.next_launcher_id,
+			"model": output["launcher_model"],
+			"location_facility_id": facility["id"],
+		}
+		state.next_launcher_id += 1
+		state.launchers.append(launcher)
+		events.append(_event("launcher_assembled", {
+			"launcher_id": launcher["id"], "model": launcher["model"], "facility_id": facility["id"],
+		}))
+	facility["jobs"].pop_front()
+	events.append(_event("job_completed", {"job_id": job["id"], "output": output.duplicate(true)}))
+
+
+static func _hall_has_room(state: GameState, data: GameData, facility: Dictionary) -> bool:
+	var capacity := int(data.facilities[facility["type"]]["launcher_capacity"])
+	var present := 0
+	for launcher in state.launchers:
+		if launcher["location_facility_id"] == facility["id"]:
+			present += 1
+	return present < capacity
 
 
 ## Step 7: expire stale offers, then maybe generate one (spec 002 R2).

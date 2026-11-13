@@ -81,6 +81,12 @@ def check_references(docs: dict, errors: list[str]) -> None:
 
     for recipe in docs.get("recipes", {}).get("recipes", []):
         rid = recipe.get("id")
+        target = facility_by_id.get(recipe.get("facility_type"), {})
+        for field in ("slots", "productivity_per_slot"):
+            if target and field not in target:
+                errors.append(f"recipes.json: {rid} vise '{recipe.get('facility_type')}' qui n'a pas de {field}")
+        if "launcher_model" in recipe.get("output", {}) and target and "launcher_capacity" not in target:
+            errors.append(f"recipes.json: {rid} produit un lanceur dans '{recipe.get('facility_type')}' sans launcher_capacity")
         if recipe.get("facility_type") not in facilities:
             errors.append(
                 f"recipes.json: {rid} utilise une installation inconnue "

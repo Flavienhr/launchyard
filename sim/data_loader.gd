@@ -18,6 +18,7 @@ static func load_default() -> GameData:
 			"sites": _read("sites.json").get("sites", []),
 			"launchers": _read("launchers.json").get("launchers", []),
 		},
+		_read("recipes.json").get("recipes", []),
 		_read("contracts.json"))
 
 
