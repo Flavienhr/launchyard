@@ -344,6 +344,51 @@ static func _resolve_pads(state: GameState) -> Array:
 	return events
 
 
+## Step 5, second part (spec 003 R3-R5): launches of the day, ascending id.
+## Weather is drawn first (WEATHER stream), then reliability (LAUNCH stream).
+## Costs are accumulated in `costs` and debited at step 8.
+static func _resolve_launches(state: GameState, data: GameData, costs: Dictionary) -> Array:
+	var events: Array = []
+	var weather := SimRng.for_stream(state, SimRng.WEATHER)
+	var launch_rng := SimRng.for_stream(state, SimRng.LAUNCH)
+	var site := data.active_site()
+	for launch in state.launches.duplicate():  # copy: resolved launches are removed
+		if launch["launch_day"] != state.day:
+			continue
+		var pad := _find_facility(state, launch["pad_id"])
+		var pad_type: Dictionary = data.facilities[pad["type"]]
+		var season := LaunchRules.season_of(state.day, site)
+		if weather.randf() < float(site["scrub_chance_by_season"][season]):
+			launch["launch_day"] += int(pad_type["scrub_recycle_days"])
+			launch["scrubs"] += 1
+			costs["scrub_costs"] += int(pad_type["scrub_cost"])
+			events.append(_event("launch_scrubbed", {"launch_id": launch["id"], "season": season,
+				"new_launch_day": launch["launch_day"], "scrubs": launch["scrubs"]}))
+			continue
+		var launcher := _find_by_id(state.launchers, launch["launcher_id"])
+		var model_id: String = launcher["model"]
+		var stats: Dictionary = state.model_stats.get(model_id, {"successes": 0})
+		var reliability := LaunchRules.model_reliability(data.launchers[model_id], int(stats["successes"]))
+		var fields := {"launch_id": launch["id"], "contract_id": launch["contract_id"], "reliability": reliability}
+		var refurb_days: int
+		if launch_rng.randf() < reliability:
+			stats["successes"] = int(stats["successes"]) + 1
+			state.model_stats[model_id] = stats
+			events.append(_event("launch_succeeded", fields))
+			events.append_array(complete_contract(state, data, launch["contract_id"]))
+			refurb_days = int(pad_type["refurb_days"])
+			costs["refurb_costs"] += int(pad_type["refurb_cost"])
+		else:  # reliability is unchanged by a failure (decision 3)
+			events.append(_event("launch_failed", fields))
+			events.append_array(fail_contract(state, data, launch["contract_id"], ContractRules.LAUNCH_FAILED))
+			refurb_days = int(pad_type["refurb_days_after_failure"])
+			costs["refurb_costs"] += int(pad_type["refurb_cost_after_failure"])
+		state.launchers.erase(launcher)  # consumed in both cases
+		state.launches.erase(launch)
+		start_refurbishment(pad, state.day + refurb_days)
+	return events
+
+
 ## Puts a pad into refurbishment until `until_day` (used by launch resolution, issue #15).
 static func start_refurbishment(pad: Dictionary, until_day: int) -> void:
 	pad["pad_state"] = PAD_REFURBISHING
@@ -404,9 +449,11 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_constructions(state))
 	events.append_array(_resolve_production(state, data))
 	events.append_array(_resolve_pads(state))
+	var launch_costs := {"scrub_costs": 0, "refurb_costs": 0}  # paid at step 8
+	events.append_array(_resolve_launches(state, data, launch_costs))
 	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_contract_deadlines(state, data))
-	events.append_array(_resolve_finances(state, data))
+	events.append_array(_resolve_finances(state, data, launch_costs))
 	state.day += 1
 	return events
 
@@ -592,6 +639,17 @@ static func _resolve_contract_deadlines(state: GameState, data: GameData) -> Arr
 	for contract in state.contracts:  # ascending id: stable order
 		if contract["status"] == ContractRules.ACTIVE and contract["deadline_day"] <= state.day:
 			events.append_array(fail_contract(state, data, contract["id"], ContractRules.DEADLINE_MISSED))
+			events.append_array(_cancel_launches_of(state, contract["id"]))
+	return events
+
+
+## A contract that ended takes its pending launch with it; the launcher stays on the pad.
+static func _cancel_launches_of(state: GameState, contract_id: int) -> Array:
+	var events: Array = []
+	for launch in state.launches.duplicate():
+		if launch["contract_id"] == contract_id:
+			state.launches.erase(launch)
+			events.append(_event("launch_cancelled", {"launch_id": launch["id"], "launch_day": launch["launch_day"]}))
 	return events
 
 
@@ -647,7 +705,7 @@ static func _change_reputation(state: GameState, data: GameData, delta: int) -> 
 	})
 
 
-static func _resolve_finances(state: GameState, data: GameData) -> Array:
+static func _resolve_finances(state: GameState, data: GameData, launch_costs := {}) -> Array:
 	var upkeep := 0
 	for facility in state.facilities:
 		if facility["status"] == "ready":  # spec 001 R2: no upkeep while building
@@ -655,8 +713,11 @@ static func _resolve_finances(state: GameState, data: GameData) -> Array:
 	var salaries := 0
 	if state.technicians_hired > 0:
 		salaries = state.technicians_hired * int(data.staff["technician"]["technician_salary_per_day"])
-	state.money -= upkeep + salaries
-	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep, "salaries": salaries})]
+	var scrub_costs: int = launch_costs.get("scrub_costs", 0)
+	var refurb_costs: int = launch_costs.get("refurb_costs", 0)
+	state.money -= upkeep + salaries + scrub_costs + refurb_costs
+	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep, "salaries": salaries,
+		"scrub_costs": scrub_costs, "refurb_costs": refurb_costs})]
 	if state.money < 0:
 		events.append(_event("negative_balance", {"money": state.money}))
 	return events

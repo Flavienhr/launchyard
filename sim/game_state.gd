@@ -19,6 +19,7 @@ var next_contract_id: int = 1
 var reputation: int = 0
 var launches: Array = []       # {id, launcher_id, pad_id, contract_id, launch_day, scrubs}, spec 003 R2
 var next_launch_id: int = 1
+var model_stats: Dictionary = {} # model -> {successes}, spec 003 R3
 
 
 func to_dict() -> Dictionary:
@@ -40,6 +41,7 @@ func to_dict() -> Dictionary:
 		"reputation": reputation,
 		"launches": launches.duplicate(true),
 		"next_launch_id": next_launch_id,
+		"model_stats": model_stats.duplicate(true),
 	}
 
 
@@ -83,6 +85,9 @@ static func from_dict(d: Dictionary) -> GameState:
 		for key in ["id", "launcher_id", "pad_id", "contract_id", "launch_day", "scrubs"]:
 			launch[key] = int(launch[key])
 	s.next_launch_id = int(d["next_launch_id"])
+	s.model_stats = d["model_stats"].duplicate(true)
+	for model in s.model_stats:
+		s.model_stats[model]["successes"] = int(s.model_stats[model]["successes"])
 	return s
 
 
