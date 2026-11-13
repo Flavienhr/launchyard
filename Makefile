@@ -28,8 +28,11 @@ SEED ?= 1
 playthrough: import ## Joue une partie scriptée « tout acheter » sur les vraies données
 	@$(GODOT) --headless --path . -s tests/playthrough.gd -- $(SEED)
 
-balance: ## Simulation d'équilibrage (phase 2)
-	@echo "TODO phase 2 : simuler N parties en headless et produire un rapport" && exit 1
+SEEDS ?= 40
+DAYS ?= 240
+VERBOSE ?=
+balance: import ## Bot d'équilibrage : make balance [SEEDS=40] [DAYS=240] [VERBOSE=1]
+	@$(GODOT) --headless --path . -s tests/balance.gd -- --seeds=$(SEEDS) --days=$(DAYS) $(if $(VERBOSE),--verbose)
 
 export: import ## Export d'un preset : make export PRESET=macOS OUT=build/macos/launchyard.zip
 	@mkdir -p $(dir $(OUT))
