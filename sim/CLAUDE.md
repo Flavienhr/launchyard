@@ -11,7 +11,7 @@ Lis d'abord `docs/adr/0002-sim-deterministe-tour-journalier.md`.
 `Node`, `SceneTree`, `get_tree()`, signaux d'UI, `Time.*`, `OS.*`, `randi()`/`randf()` globaux, tout `RandomNumberGenerator.new()` hors de `sim/rng.gd` (tout aléatoire passe par `SimRng.for_stream(state, flux)`, un flux par sous-système, ADR 0005), chargement de scènes, nombres magiques (tout vient de `data/`).
 
 ## Ordre de résolution d'une journée (`step`)
-Implémenté : 1, 2, 3, 4, 7, 8 (étape 8 : coûts fixes et échéances de contrats ; les paiements passent par `complete_contract`/`fail_contract`), et de l'étape 5 seulement la remise en état des pas (`pad_ready`) ; la résolution des tirs arrive avec #15. Le reste arrive avec les specs correspondantes. **Tenir cette ligne à jour** à chaque étape ajoutée.
+Implémenté : 1, 2, 3, 4, 7, 8 (étape 8 : coûts fixes et échéances de contrats ; les paiements passent par `complete_contract`/`fail_contract`), 5 (remise en état des pas `pad_ready`, puis résolution des tirs : météo, fiabilité, conséquences ; leurs coûts sont débités à l'étape 8). Le reste arrive avec les specs correspondantes. **Tenir cette ligne à jour** à chaque étape ajoutée.
 1. Appliquer les commandes du joueur (validées : une commande invalide est rejetée et produit un événement, elle ne crashe pas).
 2. Livraisons fournisseurs arrivées ce jour (avec tirage retard/défaut).
 3. Avancement des constructions.
