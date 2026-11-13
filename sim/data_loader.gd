@@ -17,7 +17,8 @@ static func load_default() -> GameData:
 			"orbits": _read("orbits.json").get("orbits", []),
 			"sites": _read("sites.json").get("sites", []),
 			"launchers": _read("launchers.json").get("launchers", []),
-		})
+		},
+		_read("recipes.json").get("recipes", []))
 
 
 static func _read(file_name: String) -> Dictionary:

@@ -8,6 +8,7 @@ var suppliers: Dictionary = {}   # id -> Dictionary
 var facilities: Dictionary = {}  # id -> Dictionary
 var start: Dictionary = {}       # starting conditions
 var staff: Dictionary = {}       # staff.json: "technician" block, max_queue_length
+var recipes: Dictionary = {}     # id -> Dictionary
 var orbits: Dictionary = {}      # id -> Dictionary (orbits.json)
 var sites: Dictionary = {}       # id -> Dictionary (sites.json)
 var launchers: Dictionary = {}   # model id -> Dictionary (launchers.json)
@@ -20,7 +21,8 @@ static func from_dicts(
 		facilities_list: Array,
 		start_dict: Dictionary,
 		staff_dict: Dictionary = {},
-		launch_dict: Dictionary = {}) -> GameData:  # keys: orbits, sites, launchers (Arrays), site_id
+		launch_dict: Dictionary = {},  # keys: orbits, sites, launchers (Arrays), site_id
+		recipes_list: Array = []) -> GameData:
 	var data := GameData.new()
 	for c in components_list:
 		data.components[c["id"]] = c
@@ -30,6 +32,8 @@ static func from_dicts(
 		data.facilities[f["id"]] = f
 	data.start = start_dict
 	data.staff = staff_dict
+	for r in recipes_list:
+		data.recipes[r["id"]] = r
 	for o in launch_dict.get("orbits", []):
 		data.orbits[o["id"]] = o
 	for site in launch_dict.get("sites", []):
