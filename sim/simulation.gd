@@ -68,17 +68,15 @@ static func _apply_order(state: GameState, args: Dictionary, data: GameData) -> 
 # --- End of day resolution --------------------------------------------------
 
 static func end_day(state: GameState, data: GameData) -> Array:
-	# One RNG per day, derived from (seed, day): each day is reproducible alone.
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([state.game_seed, state.day])
 	var events: Array = []
-	events.append_array(_resolve_deliveries(state, data, rng))
+	events.append_array(_resolve_deliveries(state, data))
 	events.append_array(_resolve_finances(state, data))
 	state.day += 1
 	return events
 
 
-static func _resolve_deliveries(state: GameState, data: GameData, rng: RandomNumberGenerator) -> Array:
+static func _resolve_deliveries(state: GameState, data: GameData) -> Array:
+	var rng := SimRng.for_stream(state, SimRng.DELIVERIES)
 	var events: Array = []
 	var still_pending: Array = []
 	var tomorrow := state.day + 1
