@@ -1,0 +1,22 @@
+# Godot 4
+.godot/
+export/
+*.translation
+
+# Assets générés (voir ADR 0003)
+assets/build/
+
+# Python
+.venv/
+__pycache__/
+
+# Rapports générés
+reports/
+
+# macOS
+.DS_Store
+
+# Réglages Claude Code locaux
+.claude/settings.local.json
+build/
+dist/
