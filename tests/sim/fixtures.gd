@@ -11,6 +11,10 @@ const CAPACITY := 20
 const SHOP_COST := 1_000
 const SHOP_DAYS := 3
 const SHOP_UPKEEP := 30
+const HIRE_COST := 100
+const FIRE_COST := 50
+const SALARY := 10
+const MAX_TECHS := 5
 
 
 static func data(delay_chance := 0.0) -> GameData:
@@ -26,7 +30,9 @@ static func data(delay_chance := 0.0) -> GameData:
 		[{"id": "warehouse", "name": "Warehouse", "upkeep_per_day": UPKEEP, "storage_capacity": CAPACITY},
 		{"id": "shop", "name": "Shop", "upkeep_per_day": SHOP_UPKEEP, "slots": 3, "productivity_per_slot": 10,
 			"buildable": true, "build_cost": SHOP_COST, "build_days": SHOP_DAYS, "max_count": 1}],
-		{"money": START_MONEY, "facilities": ["warehouse"]})
+		{"money": START_MONEY, "facilities": ["warehouse"]},
+		{"technician": {"hire_cost": HIRE_COST, "fire_cost": FIRE_COST,
+			"technician_salary_per_day": SALARY, "max_technicians": MAX_TECHS}})
 
 
 ## Runs `days` days, applying `commands_by_day[day]` (if any) on each day.

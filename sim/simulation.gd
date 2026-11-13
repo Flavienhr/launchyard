@@ -15,6 +15,13 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 	state.money = int(data.start["money"])
 	for type in data.start["facilities"]:
 		state.facilities.append(_new_facility(state, type, "ready", state.day))
+	state.technicians_hired = int(data.start.get("technicians", 0))
+	var assignments: Dictionary = data.start.get("assignments", {})
+	for type in assignments:
+		for facility in state.facilities:
+			if facility["type"] == type:  # first instance of that type
+				facility["assigned"] = int(assignments[type])
+				break
 	return state
 
 
@@ -35,6 +42,12 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_order(state, command.args, data)
 		Command.BUILD:
 			return _apply_build(state, command.args, data)
+		Command.HIRE:
+			return _apply_hire(state, command.args, data)
+		Command.FIRE:
+			return _apply_fire(state, command.args, data)
+		Command.ASSIGN_STAFF:
+			return _apply_assign_staff(state, command.args, data)
 	return [_rejected("unknown_command", command)]
 
 
@@ -92,13 +105,67 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 	})]
 
 
+static func _apply_hire(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var count := int(args.get("count", 0))
+	var command := Command.new(Command.HIRE, args)
+	var def: Dictionary = data.staff.get("technician", {})
+	if count <= 0:
+		return [_rejected("invalid_quantity", command)]
+	if state.technicians_hired + count > int(def["max_technicians"]):
+		return [_rejected("max_technicians", command)]
+	var cost := count * int(def["hire_cost"])
+	if cost > state.money:
+		return [_rejected("insufficient_funds", command)]
+	state.money -= cost
+	state.technicians_hired += count
+	return [_event("staff_hired", {"count": count, "cost": cost})]
+
+
+static func _apply_fire(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var count := int(args.get("count", 0))
+	var command := Command.new(Command.FIRE, args)
+	if count <= 0:
+		return [_rejected("invalid_quantity", command)]
+	if count > state.technicians_hired - total_assigned(state):
+		return [_rejected("staff_assigned", command)]
+	var cost := count * int(data.staff["technician"]["fire_cost"])
+	state.technicians_hired -= count
+	state.money -= cost  # may go negative: severance is owed regardless
+	return [_event("staff_fired", {"count": count, "cost": cost})]
+
+
+static func _apply_assign_staff(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var facility_id := int(args.get("facility_id", 0))
+	var count := int(args.get("count", 0))
+	var command := Command.new(Command.ASSIGN_STAFF, args)
+	var target: Dictionary = {}
+	for facility in state.facilities:
+		if facility["id"] == facility_id:
+			target = facility
+	if target.is_empty():
+		return [_rejected("unknown_facility", command)]
+	if target["status"] != "ready":
+		return [_rejected("facility_not_ready", command)]
+	var slots := int(data.facilities[target["type"]].get("slots", 0))
+	if slots <= 0:
+		return [_rejected("no_slots", command)]
+	if count < 0:
+		return [_rejected("invalid_quantity", command)]
+	if count > slots:
+		return [_rejected("too_many_for_slots", command)]
+	if total_assigned(state) - int(target["assigned"]) + count > state.technicians_hired:
+		return [_rejected("not_enough_staff", command)]
+	target["assigned"] = count
+	return [_event("staff_assigned", {"facility_id": facility_id, "count": count})]
+
+
 static func _new_facility(state: GameState, type: String, status: String, ready_day: int) -> Dictionary:
 	var instance := {
 		"id": state.next_facility_id,
 		"type": type,
 		"status": status,
 		"ready_day": ready_day,
-		"assigned": 0,  # technicians: filled by a later issue
+		"assigned": 0,  # technicians assigned (spec 001 R4)
 		"jobs": [],     # job queue: filled by a later issue
 	}
 	state.next_facility_id += 1
@@ -172,8 +239,11 @@ static func _resolve_finances(state: GameState, data: GameData) -> Array:
 	for facility in state.facilities:
 		if facility["status"] == "ready":  # spec 001 R2: no upkeep while building
 			upkeep += int(data.facilities[facility["type"]]["upkeep_per_day"])
-	state.money -= upkeep
-	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep})]
+	var salaries := 0
+	if state.technicians_hired > 0:
+		salaries = state.technicians_hired * int(data.staff["technician"]["technician_salary_per_day"])
+	state.money -= upkeep + salaries
+	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep, "salaries": salaries})]
 	if state.money < 0:
 		events.append(_event("negative_balance", {"money": state.money}))
 	return events
@@ -187,6 +257,13 @@ static func storage_capacity(state: GameState, data: GameData) -> int:
 		if facility["status"] == "ready":
 			capacity += int(data.facilities[facility["type"]].get("storage_capacity", 0))
 	return capacity
+
+
+static func total_assigned(state: GameState) -> int:
+	var total := 0
+	for facility in state.facilities:
+		total += int(facility["assigned"])
+	return total
 
 
 static func storage_used(state: GameState, data: GameData) -> int:
