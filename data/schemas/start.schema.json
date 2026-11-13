@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "money",
+    "facilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "money": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "facilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}

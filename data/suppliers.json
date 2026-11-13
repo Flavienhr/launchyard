@@ -1,0 +1,24 @@
+{
+  "suppliers": [
+    {
+      "id": "gulf_steelworks",
+      "name": "Gulf Steelworks",
+      "delay_chance": 0.3,
+      "delay_days": 2,
+      "catalog": [
+        { "component_id": "steel_sheet", "unit_price": 180, "lead_time_days": 3 }
+      ],
+      "_note": "Bon marché mais peu fiable."
+    },
+    {
+      "id": "northern_alloys",
+      "name": "Northern Alloys",
+      "delay_chance": 0.05,
+      "delay_days": 1,
+      "catalog": [
+        { "component_id": "steel_sheet", "unit_price": 260, "lead_time_days": 1 }
+      ],
+      "_note": "Cher, rapide et fiable : premier dilemme acheter vite ou acheter moins cher."
+    }
+  ]
+}

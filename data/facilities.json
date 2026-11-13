@@ -1,0 +1,10 @@
+{
+  "facilities": [
+    {
+      "id": "warehouse",
+      "name": "Entrepôt",
+      "upkeep_per_day": 400,
+      "storage_capacity": 100
+    }
+  ]
+}

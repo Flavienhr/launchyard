@@ -1,0 +1,11 @@
+{
+  "components": [
+    {
+      "id": "steel_sheet",
+      "name": "Tôles d'acier inox",
+      "mass_kg": 500,
+      "storage_units": 1,
+      "_note": "Matière première des réservoirs (atelier de soudure, phase 2)."
+    }
+  ]
+}
