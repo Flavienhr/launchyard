@@ -1,0 +1,16 @@
+{
+  "sites": [
+    {
+      "id": "pointe_sternes",
+      "name": "Pointe des Sternes",
+      "latitude_deg": 28,
+      "azimuth_ranges": [[45, 110]],
+      "payload_bonus_pct": {},
+      "season_length_days": 90,
+      "start_day_offset": 0,
+      "season_names": ["hiver", "printemps", "été", "automne"],
+      "scrub_chance_by_season": [0.10, 0.15, 0.35, 0.25],
+      "_note": "Spec 003, tableau sites.json. Le nom d'affichage n'est pas dans la spec (seul l'id l'est)."
+    }
+  ]
+}

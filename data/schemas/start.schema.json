@@ -5,7 +5,8 @@
     "money",
     "facilities",
     "technicians",
-    "assignments"
+    "assignments",
+    "site"
   ],
   "additionalProperties": false,
   "properties": {
@@ -33,6 +34,10 @@
         "type": "integer",
         "minimum": 0
       }
+    },
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
     }
   },
   "patternProperties": {

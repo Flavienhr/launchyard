@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["orbits"],
+  "additionalProperties": false,
+  "properties": {
+    "orbits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "azimuth_deg"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "name": { "type": "string", "minLength": 1 },
+          "azimuth_deg": { "type": "number", "minimum": 0, "maximum": 360 }
+        },
+        "patternProperties": { "^_": {} }
+      }
+    }
+  },
+  "patternProperties": { "^_": {} }
+}
