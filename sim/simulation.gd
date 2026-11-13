@@ -117,7 +117,7 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 	var instance := _new_facility(state, type, "building", state.day + int(def["build_days"]), data)
 	state.facilities.append(instance)
 	return [_event("facility_build_started", {
-		"facility_id": instance["id"], "type": type, "cost": cost, "ready_day": instance["ready_day"],
+		"facility_id": instance["id"], "facility_type": type, "cost": cost, "ready_day": instance["ready_day"],
 	})]
 
 
@@ -457,7 +457,7 @@ static func _resolve_constructions(state: GameState) -> Array:
 		if facility["status"] == "building" and facility["ready_day"] <= state.day + 1:
 			facility["status"] = "ready"
 			events.append(_event("facility_built", {
-				"facility_id": facility["id"], "type": facility["type"],
+				"facility_id": facility["id"], "facility_type": facility["type"],
 			}))
 	return events
 
@@ -689,6 +689,7 @@ static func storage_used(state: GameState, data: GameData) -> int:
 # --- Events -----------------------------------------------------------------
 
 static func _event(type: String, fields: Dictionary) -> Dictionary:
+	assert(not fields.has("type"), "event field 'type' is reserved for the event type")
 	var event := fields.duplicate()
 	event["type"] = type
 	return event
