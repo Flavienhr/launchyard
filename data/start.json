@@ -1,6 +1,13 @@
 {
+  "site": "pointe_sternes",
   "money": 200000,
-  "facilities": ["warehouse", "integration_hall", "launch_pad"],
+  "facilities": [
+    "warehouse",
+    "integration_hall",
+    "launch_pad"
+  ],
   "technicians": 4,
-  "assignments": { "integration_hall": 4 }
+  "assignments": {
+    "integration_hall": 4
+  }
 }

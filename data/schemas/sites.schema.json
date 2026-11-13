@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["sites"],
+  "additionalProperties": false,
+  "properties": {
+    "sites": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "name", "latitude_deg", "azimuth_ranges", "payload_bonus_pct",
+          "season_length_days", "start_day_offset", "season_names", "scrub_chance_by_season"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "name": { "type": "string", "minLength": 1 },
+          "latitude_deg": { "type": "number", "minimum": -90, "maximum": 90 },
+          "azimuth_ranges": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "number", "minimum": 0, "maximum": 360 }
+            }
+          },
+          "payload_bonus_pct": {
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+            "additionalProperties": { "type": "integer", "minimum": -100 }
+          },
+          "season_length_days": { "type": "integer", "minimum": 1 },
+          "start_day_offset": { "type": "integer", "minimum": 0 },
+          "season_names": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "scrub_chance_by_season": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "patternProperties": { "^_": {} }
+      }
+    }
+  },
+  "patternProperties": { "^_": {} }
+}
