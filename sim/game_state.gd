@@ -17,6 +17,8 @@ var next_launcher_id: int = 1
 var contracts: Array = []      # see ContractRules / spec 002 R1
 var next_contract_id: int = 1
 var reputation: int = 0
+var launches: Array = []       # {id, launcher_id, pad_id, contract_id, launch_day, scrubs}, spec 003 R2
+var next_launch_id: int = 1
 
 
 func to_dict() -> Dictionary:
@@ -36,6 +38,8 @@ func to_dict() -> Dictionary:
 		"contracts": contracts.duplicate(true),
 		"next_contract_id": next_contract_id,
 		"reputation": reputation,
+		"launches": launches.duplicate(true),
+		"next_launch_id": next_launch_id,
 	}
 
 
@@ -50,7 +54,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.facilities = d["facilities"].duplicate(true)
 	for facility in s.facilities:
 		# JSON turns ints into floats: recast.
-		for key in ["id", "ready_day", "assigned"]:
+		for key in ["id", "ready_day", "assigned", "launcher_id", "refurb_until_day"]:
 			facility[key] = int(facility[key])
 		for job in facility["jobs"]:
 			job["id"] = int(job["id"])
@@ -74,6 +78,11 @@ static func from_dict(d: Dictionary) -> GameState:
 			contract[key] = int(contract[key])
 	s.next_contract_id = int(d["next_contract_id"])
 	s.reputation = int(d["reputation"])
+	s.launches = d["launches"].duplicate(true)
+	for launch in s.launches:
+		for key in ["id", "launcher_id", "pad_id", "contract_id", "launch_day", "scrubs"]:
+			launch[key] = int(launch[key])
+	s.next_launch_id = int(d["next_launch_id"])
 	return s
 
 
