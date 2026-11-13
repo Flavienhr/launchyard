@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "offer_slots",
+    "initial_offers",
+    "offer_spawn_chance",
+    "offer_validity_days",
+    "advance_pct",
+    "penalty_pct",
+    "max_active_contracts",
+    "payment_rounding",
+    "mass_step_kg",
+    "generate_unreachable",
+    "reputation_start",
+    "reputation_min",
+    "reputation_max",
+    "rep_on_success",
+    "rep_on_launch_failure",
+    "rep_on_deadline_missed",
+    "templates"
+  ],
+  "properties": {
+    "offer_slots": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "initial_offers": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "offer_spawn_chance": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "offer_validity_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "advance_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "penalty_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "max_active_contracts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payment_rounding": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "mass_step_kg": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generate_unreachable": {
+      "type": "boolean"
+    },
+    "reputation_start": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reputation_min": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reputation_max": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rep_on_success": {
+      "type": "integer"
+    },
+    "rep_on_launch_failure": {
+      "type": "integer"
+    },
+    "rep_on_deadline_missed": {
+      "type": "integer"
+    },
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^_": {}
+        },
+        "required": [
+          "id",
+          "orbit",
+          "mass_min_kg",
+          "mass_max_kg",
+          "base_payment",
+          "per_kg_payment",
+          "deadline_min_days",
+          "deadline_max_days",
+          "weight",
+          "min_reputation",
+          "clients"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "orbit": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "mass_min_kg": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "mass_max_kg": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "base_payment": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "per_kg_payment": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadline_min_days": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "deadline_max_days": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "min_reputation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "clients": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}

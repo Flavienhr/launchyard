@@ -1,0 +1,73 @@
+{
+  "offer_slots": 4,
+  "initial_offers": 3,
+  "offer_spawn_chance": 0.3,
+  "offer_validity_days": 8,
+  "advance_pct": 20,
+  "penalty_pct": 30,
+  "max_active_contracts": 3,
+  "payment_rounding": 1000,
+  "mass_step_kg": 50,
+  "generate_unreachable": false,
+  "reputation_start": 50,
+  "reputation_min": 0,
+  "reputation_max": 100,
+  "rep_on_success": 6,
+  "rep_on_launch_failure": -15,
+  "rep_on_deadline_missed": -10,
+  "templates": [
+    {
+      "id": "leo_small",
+      "orbit": "leo",
+      "mass_min_kg": 300,
+      "mass_max_kg": 1200,
+      "base_payment": 110000,
+      "per_kg_payment": 50,
+      "deadline_min_days": 30,
+      "deadline_max_days": 60,
+      "weight": 5,
+      "min_reputation": 0,
+      "clients": ["Coopérative Agrisonde", "Cartoterra", "Institut Héliade"]
+    },
+    {
+      "id": "leo_heavy",
+      "orbit": "leo",
+      "mass_min_kg": 1200,
+      "mass_max_kg": 2000,
+      "base_payment": 140000,
+      "per_kg_payment": 50,
+      "deadline_min_days": 35,
+      "deadline_max_days": 65,
+      "weight": 2,
+      "min_reputation": 40,
+      "clients": ["Réseau Boréal", "Institut Héliade"]
+    },
+    {
+      "id": "sso_observation",
+      "orbit": "sso",
+      "mass_min_kg": 300,
+      "mass_max_kg": 1000,
+      "base_payment": 150000,
+      "per_kg_payment": 60,
+      "deadline_min_days": 30,
+      "deadline_max_days": 60,
+      "weight": 3,
+      "min_reputation": 0,
+      "clients": ["Observatoire de Kerlann", "Cartoterra", "Coopérative Agrisonde"]
+    },
+    {
+      "id": "gto_telecom",
+      "orbit": "gto",
+      "mass_min_kg": 200,
+      "mass_max_kg": 500,
+      "base_payment": 220000,
+      "per_kg_payment": 120,
+      "deadline_min_days": 45,
+      "deadline_max_days": 75,
+      "weight": 2,
+      "min_reputation": 60,
+      "clients": ["Archipel Télécom", "Réseau Boréal"]
+    }
+  ],
+  "_note": "Valeurs de docs/design/specs/002-contrats.md. Paiement = base_payment + masse × per_kg_payment, arrondi à payment_rounding."
+}

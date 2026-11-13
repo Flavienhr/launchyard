@@ -109,6 +109,25 @@ def check_references(docs: dict, errors: list[str]) -> None:
                 f"launchers.json: {lid} a pour recette '{launcher.get('recipe_id')}' "
                 f"qui ne produit pas ce lanceur")
 
+    # Contrats : bornes cohérentes et réputation dans [min, max].
+    # (La validation des ids d'orbite viendra avec orbits.json, issue #13.)
+    contracts = docs.get("contracts", {})
+    for tpl in contracts.get("templates", []):
+        tid = tpl.get("id")
+        if tpl.get("mass_min_kg", 0) > tpl.get("mass_max_kg", 0):
+            errors.append(f"contracts.json: {tid} mass_min_kg > mass_max_kg")
+        if tpl.get("deadline_min_days", 0) > tpl.get("deadline_max_days", 0):
+            errors.append(f"contracts.json: {tid} deadline_min_days > deadline_max_days")
+    if contracts:
+        lo, start_rep, hi = (contracts.get(k, 0) for k in ("reputation_min", "reputation_start", "reputation_max"))
+        if not lo <= start_rep <= hi:
+            errors.append("contracts.json: reputation_start hors de [reputation_min, reputation_max]")
+        if contracts.get("initial_offers", 0) > contracts.get("offer_slots", 0):
+            errors.append("contracts.json: initial_offers > offer_slots")
+    template_ids = [t.get("id") for t in contracts.get("templates", [])]
+    for dup in sorted({t for t in template_ids if template_ids.count(t) > 1}):
+        errors.append(f"contracts.json: modèle dupliqué '{dup}'")
+
     start = docs.get("start", {})
     for facility_id in start.get("facilities", []):
         if facility_id not in facilities:
