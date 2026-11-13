@@ -20,3 +20,6 @@ reports/
 .claude/settings.local.json
 build/
 dist/
+
+# Worktrees des agents Claude Code
+.claude/worktrees/
