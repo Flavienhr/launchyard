@@ -12,6 +12,7 @@ var recipes: Dictionary = {}     # id -> Dictionary
 var orbits: Dictionary = {}      # id -> Dictionary (orbits.json)
 var sites: Dictionary = {}       # id -> Dictionary (sites.json)
 var launchers: Dictionary = {}   # model id -> Dictionary (launchers.json)
+var contracts: Dictionary = {}   # contracts.json (spec 002)
 var active_site_id: String = ""  # site of the game; see active_site()
 
 
@@ -22,7 +23,8 @@ static func from_dicts(
 		start_dict: Dictionary,
 		staff_dict: Dictionary = {},
 		launch_dict: Dictionary = {},  # keys: orbits, sites, launchers (Arrays), site_id
-		recipes_list: Array = []) -> GameData:
+		recipes_list: Array = [],
+		contracts_dict: Dictionary = {}) -> GameData:
 	var data := GameData.new()
 	for c in components_list:
 		data.components[c["id"]] = c
@@ -40,6 +42,7 @@ static func from_dicts(
 		data.sites[site["id"]] = site
 	for l in launch_dict.get("launchers", []):
 		data.launchers[l["id"]] = l
+	data.contracts = contracts_dict
 	# Explicit site: launch_dict.site_id (tests) or start.json "site" (game).
 	data.active_site_id = launch_dict.get("site_id", start_dict.get("site", ""))
 	return data

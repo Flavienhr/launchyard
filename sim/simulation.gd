@@ -22,6 +22,10 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 			if facility["type"] == type:  # first instance of that type
 				facility["assigned"] = int(assignments[type])
 				break
+	state.reputation = int(data.contracts.get("reputation_start", 0))
+	var rng := SimRng.for_stream(state, SimRng.CONTRACTS)  # day 0
+	for i in int(data.contracts.get("initial_offers", 0)):
+		_add_offer(state, rng, data, state.day)
 	return state
 
 
@@ -243,6 +247,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_deliveries(state, data))
 	events.append_array(_resolve_constructions(state))
 	events.append_array(_resolve_production(state, data))
+	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_finances(state, data))
 	state.day += 1
 	return events
@@ -385,6 +390,39 @@ static func _hall_has_room(state: GameState, data: GameData, facility: Dictionar
 		if launcher["location_facility_id"] == facility["id"]:
 			present += 1
 	return present < capacity
+
+
+## Step 7: expire stale offers, then maybe generate one (spec 002 R2).
+## Resolved as of tomorrow, like deliveries: the day this step opens.
+static func _resolve_market(state: GameState, data: GameData) -> Array:
+	var events: Array = []
+	if data.contracts.is_empty():
+		return events
+	var tomorrow := state.day + 1
+	for contract in state.contracts:
+		if contract["status"] == ContractRules.OFFER and contract["offer_expires_day"] <= tomorrow:
+			contract["status"] = ContractRules.EXPIRED
+			events.append(_event("offer_expired", {"contract_id": contract["id"]}))
+	var rng := SimRng.for_stream(state, SimRng.CONTRACTS)
+	if ContractRules.visible_offers(state) < int(data.contracts["offer_slots"]) \
+			and rng.randf() < float(data.contracts["offer_spawn_chance"]):
+		var offer := _add_offer(state, rng, data, tomorrow)
+		if not offer.is_empty():
+			events.append(_event("offer_generated", {
+				"contract_id": offer["id"], "orbit": offer["orbit"], "payload_kg": offer["payload_kg"],
+				"payment": offer["payment"], "deadline_day": offer["deadline_day"],
+			}))
+	return events
+
+
+static func _add_offer(state: GameState, rng: RandomNumberGenerator, data: GameData, day: int) -> Dictionary:
+	var offer := ContractRules.generate_offer(rng, data, state.reputation, data.active_site(), day)
+	if offer.is_empty():
+		return offer
+	offer["id"] = state.next_contract_id
+	state.next_contract_id += 1
+	state.contracts.append(offer)
+	return offer
 
 
 static func _resolve_finances(state: GameState, data: GameData) -> Array:

@@ -142,6 +142,12 @@ def check_references(docs: dict, errors: list[str]) -> None:
             errors.append(f"contracts.json: {tid} vise une orbite inconnue '{tpl['orbit']}'")
         if tpl.get("mass_min_kg", 0) > tpl.get("mass_max_kg", 0):
             errors.append(f"contracts.json: {tid} mass_min_kg > mass_max_kg")
+        # La sim arrondit la masse au multiple de mass_step_kg le plus proche, sans
+        # recadrage : les bornes doivent donc être des multiples du pas.
+        step = contracts.get("mass_step_kg", 1)
+        for key in ("mass_min_kg", "mass_max_kg"):
+            if tpl.get(key, 0) % step:
+                errors.append(f"contracts.json: {tid} {key} n'est pas un multiple de mass_step_kg ({step})")
         if tpl.get("deadline_min_days", 0) > tpl.get("deadline_max_days", 0):
             errors.append(f"contracts.json: {tid} deadline_min_days > deadline_max_days")
     if contracts:

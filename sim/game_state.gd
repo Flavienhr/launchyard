@@ -14,6 +14,9 @@ var next_order_id: int = 1
 var next_job_id: int = 1
 var launchers: Array = []      # {id, model, location_facility_id}, see Simulation._finish_job
 var next_launcher_id: int = 1
+var contracts: Array = []      # see ContractRules / spec 002 R1
+var next_contract_id: int = 1
+var reputation: int = 0
 
 
 func to_dict() -> Dictionary:
@@ -30,6 +33,9 @@ func to_dict() -> Dictionary:
 		"next_job_id": next_job_id,
 		"launchers": launchers.duplicate(true),
 		"next_launcher_id": next_launcher_id,
+		"contracts": contracts.duplicate(true),
+		"next_contract_id": next_contract_id,
+		"reputation": reputation,
 	}
 
 
@@ -59,6 +65,12 @@ static func from_dict(d: Dictionary) -> GameState:
 		for key in ["id", "location_facility_id"]:
 			launcher[key] = int(launcher[key])
 	s.next_launcher_id = int(d["next_launcher_id"])
+	s.contracts = d["contracts"].duplicate(true)
+	for contract in s.contracts:
+		for key in ["id", "payload_kg", "payment", "advance", "penalty", "deadline_day", "offer_expires_day"]:
+			contract[key] = int(contract[key])
+	s.next_contract_id = int(d["next_contract_id"])
+	s.reputation = int(d["reputation"])
 	return s
 
 
