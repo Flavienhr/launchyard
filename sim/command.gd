@@ -58,10 +58,11 @@ static func cancel_job(job_id: int) -> Command:
 	return Command.new(CANCEL_JOB, {"job_id": job_id})
 
 
-static func schedule_launch(launcher_id: int, pad_id: int, contract_id: int, launch_day: int) -> Command:
+static func schedule_launch(launcher_id: int, pad_id: int, contract_id: int, launch_day: int,
+		insured := false) -> Command:
 	return Command.new(SCHEDULE_LAUNCH, {
 		"launcher_id": launcher_id, "pad_id": pad_id,
-		"contract_id": contract_id, "launch_day": launch_day,
+		"contract_id": contract_id, "launch_day": launch_day, "insured": insured,
 	})
 
 
