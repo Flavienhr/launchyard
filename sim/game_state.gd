@@ -11,6 +11,9 @@ var technicians_hired: int = 0
 var next_facility_id: int = 1
 var pending_orders: Array = [] # orders in transit, see Simulation._apply_order
 var next_order_id: int = 1
+var contracts: Array = []      # see ContractRules / spec 002 R1
+var next_contract_id: int = 1
+var reputation: int = 0
 
 
 func to_dict() -> Dictionary:
@@ -24,6 +27,9 @@ func to_dict() -> Dictionary:
 		"next_facility_id": next_facility_id,
 		"pending_orders": pending_orders.duplicate(true),
 		"next_order_id": next_order_id,
+		"contracts": contracts.duplicate(true),
+		"next_contract_id": next_contract_id,
+		"reputation": reputation,
 	}
 
 
@@ -42,6 +48,12 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.next_facility_id = int(d["next_facility_id"])
 	s.pending_orders = d["pending_orders"].duplicate(true)
 	s.next_order_id = int(d["next_order_id"])
+	s.contracts = d["contracts"].duplicate(true)
+	for contract in s.contracts:
+		for key in ["id", "payload_kg", "payment", "advance", "penalty", "deadline_day", "offer_expires_day"]:
+			contract[key] = int(contract[key])
+	s.next_contract_id = int(d["next_contract_id"])
+	s.reputation = int(d["reputation"])
 	return s
 
 
