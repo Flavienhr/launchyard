@@ -153,6 +153,21 @@ static func supplier_offers(data: GameData, component_id: String) -> Array:
 	return offers
 
 
+## Quote for ordering `quantity` units of a component from a supplier:
+## {total_cost, affordable, storage_units (needed), free_storage (now), fits}.
+## fits = false means the truck would wait at the gate until space is freed.
+static func order_quote(state: GameState, data: GameData, supplier_id: String,
+		component_id: String, quantity: int) -> Dictionary:
+	var entry := data.catalog_entry(supplier_id, component_id)
+	var total := quantity * int(entry.get("unit_price", 0))
+	var needed := quantity * int(data.components.get(component_id, {}).get("storage_units", 0))
+	var free := Simulation.storage_capacity(state, data) - Simulation.storage_used(state, data)
+	return {
+		"total_cost": total, "affordable": total <= state.money,
+		"storage_units": needed, "free_storage": free, "fits": needed <= free,
+	}
+
+
 ## Buy vs make comparison for a component.
 ## {component_id, offers, buy: cheapest offer or {}, make: {} if no recipe else
 ## {recipe_id, facility_type, material_cost, days, ready}}.

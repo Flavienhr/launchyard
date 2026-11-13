@@ -306,3 +306,16 @@ func test_bankruptcy_status_warning_and_days_left() -> void:
 	var status := SimQueries.bankruptcy_status(state, data)
 	assert_true(status["warning"])
 	assert_eq(status["days_left"], 3)
+
+
+func test_order_quote_cost_and_storage() -> void:
+	var s := _state(1, {"steel": 3})
+	var q := SimQueries.order_quote(s[0], s[1], "acme", "steel", 4)
+	assert_eq(q["total_cost"], 4 * F.UNIT_PRICE)
+	assert_eq(q["storage_units"], 4)
+	assert_eq(q["free_storage"], F.CAPACITY - 3)
+	assert_true(q["affordable"] and q["fits"])
+	var big := SimQueries.order_quote(s[0], s[1], "acme", "steel", F.CAPACITY)
+	assert_true(not big["fits"])
+	var rich := SimQueries.order_quote(s[0], s[1], "acme", "steel", F.START_MONEY)
+	assert_true(not rich["affordable"])
