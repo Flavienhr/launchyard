@@ -4,7 +4,7 @@ extends SceneTree
 ## Discovers tests/**/test_*.gd and runs every test_* method.
 ## Output is deliberately short (summary + failures only): agents read it.
 
-const TEST_DIRS := ["res://tests/sim"]
+const TEST_DIRS := ["res://tests/sim", "res://tests/ui"]
 
 
 func _init() -> void:

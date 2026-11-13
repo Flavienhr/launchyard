@@ -80,6 +80,7 @@ var _sel_day := -1
 
 func _ready() -> void:
 	%EndDayButton.pressed.connect(func() -> void: session.end_day())
+	%FastForwardButton.pressed.connect(_on_fast_forward)
 	%NewGameButton.pressed.connect(_new_game)
 	var titles := [tr("Installations"), tr("Construction"), tr("Nomenclature"),
 		tr("Fournisseurs"), tr("Contrats"), tr("Lancement")]
@@ -99,6 +100,12 @@ func _new_game() -> void:
 	_log.clear()
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
 	_refresh()
+
+
+func _on_fast_forward() -> void:
+	var days := session.fast_forward()
+	if days > 0:
+		_log_line(tr("▸▸ Avance rapide : %d jour(s)") % days, COLOR_DIM)
 
 
 func _on_session_changed(events: Array) -> void:

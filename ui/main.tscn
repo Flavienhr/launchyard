@@ -187,6 +187,12 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="FastForwardButton" type="Button" parent="Margin/Root/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 44)
+layout_mode = 2
+text = "AVANCER ▸▸"
+
 [node name="EndDayButton" type="Button" parent="Margin/Root/Footer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(240, 44)
