@@ -13,7 +13,8 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 	var state := GameState.new()
 	state.game_seed = game_seed
 	state.money = int(data.start["money"])
-	state.facilities = data.start["facilities"].duplicate()
+	for type in data.start["facilities"]:
+		state.facilities.append(_new_facility(state, type, "ready", state.day))
 	return state
 
 
@@ -32,6 +33,8 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 	match command.type:
 		Command.ORDER:
 			return _apply_order(state, command.args, data)
+		Command.BUILD:
+			return _apply_build(state, command.args, data)
 	return [_rejected("unknown_command", command)]
 
 
@@ -65,11 +68,49 @@ static func _apply_order(state: GameState, args: Dictionary, data: GameData) -> 
 	})]
 
 
+static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var type: String = args.get("facility_type", "")
+	var command := Command.new(Command.BUILD, args)
+	var def: Dictionary = data.facilities.get(type, {})
+	if def.is_empty() or not bool(def.get("buildable", false)):
+		return [_rejected("not_buildable", command)]
+	var count := 0
+	for facility in state.facilities:
+		if facility["type"] == type:
+			count += 1  # "building" instances count too
+	if count >= int(def.get("max_count", 0)):
+		return [_rejected("max_count_reached", command)]
+	var cost := int(def["build_cost"])
+	if cost > state.money:
+		return [_rejected("insufficient_funds", command)]
+
+	state.money -= cost
+	var instance := _new_facility(state, type, "building", state.day + int(def["build_days"]))
+	state.facilities.append(instance)
+	return [_event("facility_build_started", {
+		"facility_id": instance["id"], "type": type, "cost": cost, "ready_day": instance["ready_day"],
+	})]
+
+
+static func _new_facility(state: GameState, type: String, status: String, ready_day: int) -> Dictionary:
+	var instance := {
+		"id": state.next_facility_id,
+		"type": type,
+		"status": status,
+		"ready_day": ready_day,
+		"assigned": 0,  # technicians: filled by a later issue
+		"jobs": [],     # job queue: filled by a later issue
+	}
+	state.next_facility_id += 1
+	return instance
+
+
 # --- End of day resolution --------------------------------------------------
 
 static func end_day(state: GameState, data: GameData) -> Array:
 	var events: Array = []
 	events.append_array(_resolve_deliveries(state, data))
+	events.append_array(_resolve_constructions(state))
 	events.append_array(_resolve_finances(state, data))
 	state.day += 1
 	return events
@@ -115,10 +156,22 @@ static func _resolve_deliveries(state: GameState, data: GameData) -> Array:
 	return events
 
 
+static func _resolve_constructions(state: GameState) -> Array:
+	var events: Array = []
+	for facility in state.facilities:  # ascending id: stable order
+		if facility["status"] == "building" and facility["ready_day"] <= state.day + 1:
+			facility["status"] = "ready"
+			events.append(_event("facility_built", {
+				"facility_id": facility["id"], "type": facility["type"],
+			}))
+	return events
+
+
 static func _resolve_finances(state: GameState, data: GameData) -> Array:
 	var upkeep := 0
-	for facility_id in state.facilities:
-		upkeep += int(data.facilities[facility_id]["upkeep_per_day"])
+	for facility in state.facilities:
+		if facility["status"] == "ready":  # spec 001 R2: no upkeep while building
+			upkeep += int(data.facilities[facility["type"]]["upkeep_per_day"])
 	state.money -= upkeep
 	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep})]
 	if state.money < 0:
@@ -130,8 +183,9 @@ static func _resolve_finances(state: GameState, data: GameData) -> Array:
 
 static func storage_capacity(state: GameState, data: GameData) -> int:
 	var capacity := 0
-	for facility_id in state.facilities:
-		capacity += int(data.facilities[facility_id].get("storage_capacity", 0))
+	for facility in state.facilities:
+		if facility["status"] == "ready":
+			capacity += int(data.facilities[facility["type"]].get("storage_capacity", 0))
 	return capacity
 
 

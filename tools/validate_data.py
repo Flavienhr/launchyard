@@ -66,6 +66,12 @@ def check_references(docs: dict, errors: list[str]) -> None:
         if isinstance(f, dict) and "id" in f
     }
 
+    # Une installation constructible sans max_count serait silencieusement
+    # inconstructible (la sim lit max_count avec 0 par défaut).
+    for fid, facility in facility_by_id.items():
+        if facility.get("buildable") and "max_count" not in facility:
+            errors.append(f"facilities.json: {fid} est buildable mais n'a pas de max_count")
+
     for supplier in docs.get("suppliers", {}).get("suppliers", []):
         for entry in supplier.get("catalog", []):
             if entry.get("component_id") not in components:

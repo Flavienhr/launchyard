@@ -4,6 +4,7 @@ extends RefCounted
 ## which gives saves, replays and bug reports for free (ADR 0002).
 
 const ORDER := &"order"
+const BUILD := &"build"
 
 var type: StringName
 var args: Dictionary
@@ -20,6 +21,10 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 		"component_id": component_id,
 		"quantity": quantity,
 	})
+
+
+static func build(facility_type: String) -> Command:
+	return Command.new(BUILD, {"facility_type": facility_type})
 
 
 func to_dict() -> Dictionary:

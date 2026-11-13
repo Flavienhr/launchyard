@@ -8,6 +8,9 @@ const LEAD_TIME := 3
 const DELAY_DAYS := 2
 const UPKEEP := 50
 const CAPACITY := 20
+const SHOP_COST := 1_000
+const SHOP_DAYS := 3
+const SHOP_UPKEEP := 30
 
 
 static func data(delay_chance := 0.0) -> GameData:
@@ -20,7 +23,9 @@ static func data(delay_chance := 0.0) -> GameData:
 			"delay_days": DELAY_DAYS,
 			"catalog": [{"component_id": "steel", "unit_price": UNIT_PRICE, "lead_time_days": LEAD_TIME}],
 		}],
-		[{"id": "warehouse", "name": "Warehouse", "upkeep_per_day": UPKEEP, "storage_capacity": CAPACITY}],
+		[{"id": "warehouse", "name": "Warehouse", "upkeep_per_day": UPKEEP, "storage_capacity": CAPACITY},
+		{"id": "shop", "name": "Shop", "upkeep_per_day": SHOP_UPKEEP, "slots": 3, "productivity_per_slot": 10,
+			"buildable": true, "build_cost": SHOP_COST, "build_days": SHOP_DAYS, "max_count": 1}],
 		{"money": START_MONEY, "facilities": ["warehouse"]})
 
 
