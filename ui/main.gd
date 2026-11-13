@@ -57,6 +57,7 @@ var _sel_launcher := -1
 var _sel_pad := -1
 var _sel_contract := -1
 var _sel_day := -1
+var _sel_insured := false
 
 @onready var _day_label: Label = %DayLabel
 @onready var _money_label: Label = %MoneyLabel
@@ -742,15 +743,41 @@ func _build_schedule_form(box: VBoxContainer) -> void:
 	_label(card, tr("Fiabilité actuelle du modèle : %d %%") % roundi(plan["reliability"] * 100))
 	_label(card, tr("Marge avant la date limite : %d j (limite : jour %d)") % [plan["margin_days"], plan["max_day"]],
 		&"DangerLabel" if plan["margin_days"] < 0 else &"DimLabel")
+	_build_insurance_row(card, state)
 	if plan["error"] != "":
 		_label(card, tr(REJECT_REASONS.get(plan["error"], plan["error"])), &"WarnLabel")
 	var go := _button(card, tr("Planifier le tir"), func() -> void:
-		_send(Command.schedule_launch(_sel_launcher, _sel_pad, _sel_contract, _sel_day))
+		_send(Command.schedule_launch(_sel_launcher, _sel_pad, _sel_contract, _sel_day, _sel_insured))
 		_sel_day = -1
 		_sel_pad = -1
-		_sel_contract = -1, plan["error"] != "")
+		_sel_contract = -1
+		_sel_insured = false, plan["error"] != "")
 	go.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 
+
+
+## Insurance (spec 003 decision 1): premium now, partial refund of a kit if the launch fails.
+func _build_insurance_row(card: VBoxContainer, state: GameState) -> void:
+	var contract := ContractRules.find(state, _sel_contract)
+	var launcher := {}
+	for l in state.launchers:
+		if l["id"] == _sel_launcher:
+			launcher = l
+	if contract.is_empty() or launcher.is_empty() or not session.data.contracts.has("insurance_premium_pct"):
+		return
+	var premium := LaunchRules.insurance_premium(contract, session.data)
+	var payout := LaunchRules.insurance_payout(session.data.launchers[launcher["model"]], session.data)
+	var check := CheckBox.new()
+	check.text = tr("Assurer ce tir : prime %s cr maintenant · %s cr remboursés si le tir échoue") % [
+		_fmt(premium), _fmt(payout)]
+	check.button_pressed = _sel_insured
+	check.disabled = premium > state.money
+	if check.disabled:
+		check.tooltip_text = tr("Trésorerie insuffisante pour la prime.")
+	check.toggled.connect(func(on: bool) -> void:
+		_sel_insured = on
+		_refresh())
+	card.add_child(check)
 
 ## The current choice if it is an enabled option, else the first enabled option id. -1 if none.
 func _pick_option(options: Array, current: int) -> int:
@@ -875,6 +902,10 @@ func _log_event(e: Dictionary) -> void:
 		"launch_failed":
 			_log_line(tr("[ÉCHEC] Tir #%d échoué : le lanceur est perdu. Contrat #%d (fiabilité %d %%)") % [
 				e["launch_id"], e["contract_id"], roundi(e["reliability"] * 100)], COLOR_DANGER)
+		"insurance_paid":
+			_log_line(tr("Tir #%d assuré : prime -%s cr") % [e["launch_id"], _fmt(e["premium"])], COLOR_ACCENT)
+		"insurance_payout":
+			_log_line(tr("Assurance : +%s cr remboursés pour le tir #%d") % [_fmt(e["amount"]), e["launch_id"]], COLOR_OK)
 		"facility_build_started":
 			_log_line(tr("Construction : %s (-%s cr), prête au jour %d") % [
 				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)
