@@ -84,6 +84,76 @@ func test_buy_vs_make() -> void:
 	assert_true(steel["make"].is_empty())
 
 
+func _chain_state() -> Array:
+	var s := _state(2)
+	var data: GameData = s[1]
+	data.components["part"] = {"id": "part", "name": "Part", "mass_kg": 1, "storage_units": 1}
+	data.facilities["forge"] = {"id": "forge", "name": "Forge", "upkeep_per_day": 0, "slots": 2,
+		"productivity_per_slot": 10, "buildable": true, "build_cost": 2_000, "build_days": 2,
+		"max_count": 1, "requires_facilities": ["shop"]}
+	data.recipes["make_part"] = {"id": "make_part", "facility_type": "shop", "inputs": {"steel": 1},
+		"output": {"component_id": "part", "quantity": 1}, "work_points": 20,
+		"scrap_rate_start": 0.5, "scrap_rate_floor": 0.5, "scrap_rate_drop_per_attempt": 0.0}
+	data.recipes["make_engine"] = {"id": "make_engine", "facility_type": "forge",
+		"inputs": {"part": 1, "steel": 1}, "output": {"component_id": "engine", "quantity": 1},
+		"work_points": 20, "scrap_rate_start": 0.5, "scrap_rate_floor": 0.5,
+		"scrap_rate_drop_per_attempt": 0.0}
+	return s
+
+
+func test_effective_cost_follows_chain_and_scrap() -> void:
+	var s := _chain_state()
+	var make: Dictionary = SimQueries.buy_vs_make(s[0], s[1], "engine")["make"]
+	assert_eq(make["recipe_id"], "make_engine")
+	assert_eq(make["material_cost"], 2 * F.UNIT_PRICE, "part (1 steel) + 1 steel")
+	# part: 100 / 0.5 = 200 ; engine: (200 + 100) / 0.5 = 600
+	assert_eq(make["effective_cost"], 6 * F.UNIT_PRICE)
+	assert_eq(make["success_rate"], 0.25)
+	assert_eq(make["steps"].size(), 2)
+	assert_true(not make["ready"], "no forge yet")
+	assert_eq(make["missing_facilities"].size(), 1)
+	assert_eq(make["missing_facilities"][0]["type"], "forge")
+	assert_eq(make["missing_facilities"][0]["requires_missing"].size(), 0, "shop is ready")
+
+
+func test_effective_cost_uses_current_scrap_rate() -> void:
+	var s := _chain_state()
+	s[1].recipes["make_part"]["scrap_rate_start"] = 0.5
+	s[1].recipes["make_part"]["scrap_rate_floor"] = 0.0
+	s[1].recipes["make_part"]["scrap_rate_drop_per_attempt"] = 0.5
+	var before: int = SimQueries.buy_vs_make(s[0], s[1], "engine")["make"]["effective_cost"]
+	s[0].recipe_attempts["make_part"] = 1
+	var after: int = SimQueries.buy_vs_make(s[0], s[1], "engine")["make"]["effective_cost"]
+	assert_eq(before, 6 * F.UNIT_PRICE)
+	assert_eq(after, 4 * F.UNIT_PRICE, "part now 100, engine (100 + 100) / 0.5")
+
+
+func test_build_options_prerequisites() -> void:
+	var s := _chain_state()
+	s[0].facilities = s[0].facilities.filter(func(f): return f["type"] != "shop")
+	var forge := {}
+	for option in SimQueries.build_options(s[0], s[1]):
+		if option["type"] == "forge":
+			forge = option
+	assert_eq(forge["missing"], ["shop"])
+	assert_true(not forge["requires"][0]["ready"])
+	assert_eq(forge["requires"][0]["name"], "Shop")
+
+
+func test_scrap_info() -> void:
+	var s := _chain_state()
+	var r: Dictionary = s[1].recipes["make_part"]
+	r["scrap_rate_start"] = 0.5
+	r["scrap_rate_floor"] = 0.1
+	r["scrap_rate_drop_per_attempt"] = 0.1
+	s[0].recipe_attempts["make_part"] = 1
+	var info := SimQueries.scrap_info(s[0], s[1], "make_part")
+	assert_eq(info["start"], 0.5)
+	assert_eq(info["attempts_to_floor"], 3)
+	assert_true(info["has_scrap"])
+	assert_true(not SimQueries.scrap_info(s[0], s[1], "weld")["has_scrap"])
+
+
 func test_hall_occupancy() -> void:
 	var s := _state()
 	var hall := _fac(s[0], "hall")
