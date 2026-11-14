@@ -23,6 +23,7 @@ var model_stats: Dictionary = {} # model -> {successes}, spec 003 R3
 var days_in_debt: int = 0      # consecutive days with money < 0, spec 004 R1
 var game_over: bool = false    # bankruptcy reached, spec 004 R3
 var recipe_attempts: Dictionary = {} # recipe_id -> jobs that reached quality control, spec 006 R4
+var market: Dictionary = MarketRules.empty_state() # {index, prev_index, shortages: id -> ends_day, spot_used}, spec 007
 
 
 func to_dict() -> Dictionary:
@@ -48,6 +49,7 @@ func to_dict() -> Dictionary:
 		"days_in_debt": days_in_debt,
 		"game_over": game_over,
 		"recipe_attempts": recipe_attempts.duplicate(true),
+		"market": market.duplicate(true),
 	}
 
 
@@ -101,7 +103,17 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.recipe_attempts = d.get("recipe_attempts", {}).duplicate(true)
 	for recipe_id in s.recipe_attempts:
 		s.recipe_attempts[recipe_id] = int(s.recipe_attempts[recipe_id])
+	s.market = _market_from_dict(d.get("market", MarketRules.empty_state()))
 	return s
+
+
+## JSON turns ints into floats: recast every number of the market state.
+static func _market_from_dict(d: Dictionary) -> Dictionary:
+	var out := MarketRules.empty_state()
+	for key in out:
+		for id in d.get(key, {}):
+			out[key][id] = int(d[key][id])
+	return out
 
 
 func copy() -> GameState:

@@ -699,3 +699,30 @@ static func scrap_info(state: GameState, data: GameData, recipe_id: String) -> D
 		to_floor = maxi(0, ceili((start - floor_rate) / drop - 0.000001) - attempts)
 	return {"start": start, "current": scrap_rate(state, data, recipe_id), "floor": floor_rate,
 		"attempts": attempts, "attempts_to_floor": to_floor, "has_scrap": start > 0.0}
+
+
+# --- Market (spec 007) ---
+
+## Current spot price of a catalog entry (R1): catalog price x effective index
+## (shortage surcharge included), rounded half up. -1 if not in the catalog.
+static func spot_price(state: GameState, data: GameData, supplier_id: String, component_id: String) -> int:
+	var entry := data.catalog_entry(supplier_id, component_id)
+	if entry.is_empty():
+		return -1
+	return MarketRules.spot_price(state, data, int(entry["unit_price"]), component_id)
+
+
+## Per component of market.json: {index, change (since the previous period),
+## shortage, ends_day (-1 without shortage)}.
+static func market_snapshot(state: GameState, data: GameData) -> Dictionary:
+	var out := {}
+	for row in data.market.get("components", []):
+		var id: String = row["id"]
+		var index := MarketRules.index_of(state, data, id)
+		out[id] = {
+			"index": index,
+			"change": index - int(state.market["prev_index"].get(id, index)),
+			"shortage": MarketRules.in_shortage(state, data, id),
+			"ends_day": MarketRules.shortage_ends_day(state, data, id),
+		}
+	return out
