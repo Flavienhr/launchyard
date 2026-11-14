@@ -800,7 +800,7 @@ static func supply_schedule(state: GameState, data: GameData, days: int) -> Arra
 			"supplier_id": order["supplier_id"], "component_id": order["component_id"],
 			"quantity": order["quantity"],
 			"storage_units": int(order["quantity"]) * int(data.components[order["component_id"]]["storage_units"]),
-			"invoice": 0, "skipped": false})
+			"invoice": 0, "skipped": false, "delay_days": int(order.get("delay_days", 0))})
 	for contract in state.supply_contracts:
 		if contract["status"] != SupplyRules.ACTIVE:
 			continue
@@ -815,7 +815,8 @@ static func supply_schedule(state: GameState, data: GameData, days: int) -> Arra
 				"contract_id": contract["id"], "order_id": -1,
 				"supplier_id": contract["supplier_id"], "component_id": contract["component_id"],
 				"quantity": contract["quantity"], "storage_units": units,
-				"invoice": 0 if skipped else int(contract["quantity"]) * price, "skipped": skipped})
+				"invoice": 0 if skipped else int(contract["quantity"]) * price, "skipped": skipped,
+				"delay_days": 0})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if a["day"] != b["day"]:
 			return a["day"] < b["day"]

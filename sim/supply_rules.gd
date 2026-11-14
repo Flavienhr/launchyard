@@ -6,7 +6,7 @@ extends RefCounted
 
 ## Unit of the percentages in supply_contracts.json (not a balance value).
 const PCT := 100
-## Spec definition (R4): monthly_value is the catalog value brought back to 28 days.
+## Definition of a game month in spec 007 R4 (monthly_value = catalog value brought back to 28 days): a unit, not a balance value, so it stays out of data/.
 const REFERENCE_DAYS := 28
 
 const ACTIVE := "active"
@@ -195,7 +195,7 @@ static func dispatch_due(state: GameState, data: GameData) -> Array:
 	var events: Array = []
 	var tomorrow := state.day + 1
 	for contract in state.supply_contracts:
-		if contract["status"] != ACTIVE or int(contract["next_delivery_day"]) != tomorrow:
+		if contract["status"] != ACTIVE or int(contract["next_delivery_day"]) > tomorrow:
 			continue
 		if contract["skip_next"]:
 			contract["skip_next"] = false  # take-or-pay already paid (R7)

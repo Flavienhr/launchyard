@@ -386,7 +386,66 @@ func test_json_round_trip() -> void:
 	assert_eq(JSON.stringify(a["state"].to_dict()), JSON.stringify(b["state"].to_dict()))
 
 
+func test_zero_lead_time_ships_once_and_advances() -> void:
+	var data := _data()
+	data.suppliers["s1"]["catalog"][0]["lead_time_days"] = 0
+	var state := _state(data)
+	_sign(state, data)
+	assert_eq(state.supply_contracts[0]["next_delivery_day"], 0)
+	var run := _run(state, data, 2)
+	assert_eq(_days_with(run["events"], "supply_delivery_dispatched"), [0], "(shipped once)")
+	assert_eq(run["state"].supply_contracts[0]["next_delivery_day"], PERIOD)
+	assert_eq(run["state"].supply_contracts[0]["deliveries_done"], 1)
+	assert_eq(run["state"].money, MONEY - 1010)
+
+
+func test_missed_due_day_still_ships() -> void:
+	var data := _data()
+	var state := _state(data)
+	_sign(state, data)
+	state.supply_contracts[0]["next_delivery_day"] = -3
+	var run := _run(state, data, 1)
+	assert_eq(_days_with(run["events"], "supply_delivery_dispatched"), [0])
+	assert_eq(run["state"].supply_contracts[0]["next_delivery_day"], PERIOD - 3)
+
+
+func test_shortage_can_reduce_a_delivery_to_zero() -> void:
+	var data := _data()
+	var state := _state(data)
+	_sign(state, data, "s1", 1)  # 1 x 50 div 100 = 0
+	state.market["shortages"]["steel"] = 999
+	var run := _run(state, data, 2)
+	var reduced: Dictionary = _all(run["events"], "supply_delivery_reduced")[0]
+	assert_eq([reduced["quantity_contracted"], reduced["quantity_shipped"]], [1, 0])
+	assert_true(_all(run["events"], "supply_delivery_dispatched").is_empty())
+	assert_eq(run["state"].money, MONEY)
+	assert_true(run["state"].pending_orders.is_empty())
+	assert_eq(run["state"].supply_contracts[0]["deliveries_done"], 1)
+
+
+func test_late_penalty_below_the_cap() -> void:
+	var data := _data(1.0, 7)
+	var state := _state(data)
+	_sign(state, data)
+	var run := _run(state, data, 9)
+	var penalty: Dictionary = _all(run["events"], "supply_penalty_earned")[0]
+	assert_eq(penalty["days_late"], 7)
+	assert_eq(penalty["amount"], 141)  # 1010 * 14 div 100, under the 20 % cap
+
+
 # --- Queries ---
+
+func test_schedule_exposes_the_drawn_delay() -> void:
+	var data := _data(1.0, 3)
+	var state := _state(data)
+	_sign(state, data)
+	var run := _run(state, data, 2)
+	var order: Dictionary = run["state"].pending_orders[0]
+	assert_true(order["delay_rolled"])
+	var rows := SimQueries.supply_schedule(run["state"], data, 10)
+	assert_eq(rows[0]["kind"], "transit")
+	assert_eq([rows[0]["day"], rows[0]["delay_days"]], [order["arrival_day"], 3])
+	assert_eq(rows[1]["delay_days"], 0, "(planned shipment: no delay yet)")
 
 func test_quote_matches_the_signature() -> void:
 	var data := _data()
