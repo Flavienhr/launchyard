@@ -22,6 +22,7 @@ var next_launch_id: int = 1
 var model_stats: Dictionary = {} # model -> {successes}, spec 003 R3
 var days_in_debt: int = 0      # consecutive days with money < 0, spec 004 R1
 var game_over: bool = false    # bankruptcy reached, spec 004 R3
+var recipe_attempts: Dictionary = {} # recipe_id -> jobs that reached quality control, spec 006 R4
 
 
 func to_dict() -> Dictionary:
@@ -46,6 +47,7 @@ func to_dict() -> Dictionary:
 		"model_stats": model_stats.duplicate(true),
 		"days_in_debt": days_in_debt,
 		"game_over": game_over,
+		"recipe_attempts": recipe_attempts.duplicate(true),
 	}
 
 
@@ -65,6 +67,8 @@ static func from_dict(d: Dictionary) -> GameState:
 		for job in facility["jobs"]:
 			job["id"] = int(job["id"])
 			job["progress"] = int(job["progress"])
+			job["qc_passed"] = bool(job.get("qc_passed", false))
+			job["scrap_rate"] = float(job.get("scrap_rate", 0.0))
 	s.technicians_hired = int(d["technicians_hired"])
 	s.next_facility_id = int(d["next_facility_id"])
 	s.pending_orders = d["pending_orders"].duplicate(true)
@@ -94,6 +98,9 @@ static func from_dict(d: Dictionary) -> GameState:
 		s.model_stats[model]["successes"] = int(s.model_stats[model]["successes"])
 	s.days_in_debt = int(d["days_in_debt"])
 	s.game_over = bool(d["game_over"])
+	s.recipe_attempts = d.get("recipe_attempts", {}).duplicate(true)
+	for recipe_id in s.recipe_attempts:
+		s.recipe_attempts[recipe_id] = int(s.recipe_attempts[recipe_id])
 	return s
 
 

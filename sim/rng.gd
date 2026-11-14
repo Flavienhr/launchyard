@@ -9,6 +9,7 @@ const CONTRACTS := &"contracts"
 const WEATHER := &"weather"
 const LAUNCH := &"launch"
 const EVENTS := &"events"
+const PRODUCTION := &"production"
 
 
 static func for_stream(state: GameState, stream: StringName) -> RandomNumberGenerator:

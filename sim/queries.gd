@@ -561,3 +561,13 @@ static func bankruptcy_status(state: GameState, data: GameData) -> Dictionary:
 		"days_in_debt": state.days_in_debt,
 		"days_left": maxi(grace - state.days_in_debt, 0),
 	}
+
+
+## Current scrap rate of a recipe (spec 006 R4): max(floor, start - drop * attempts).
+## A recipe without scrap fields has rate 0.
+static func scrap_rate(state: GameState, data: GameData, recipe_id: String) -> float:
+	var recipe: Dictionary = data.recipes[recipe_id]
+	var attempts := int(state.recipe_attempts.get(recipe_id, 0))
+	var start := float(recipe.get("scrap_rate_start", 0))
+	var drop := float(recipe.get("scrap_rate_drop_per_attempt", 0))
+	return maxf(float(recipe.get("scrap_rate_floor", 0)), start - drop * attempts)

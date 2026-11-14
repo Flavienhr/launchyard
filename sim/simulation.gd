@@ -204,6 +204,8 @@ static func _apply_queue_job(state: GameState, args: Dictionary, data: GameData)
 			"started": false,
 			"progress": 0,
 			"blocked": "",  # last blocking reason already reported ("" = none)
+			"qc_passed": false,  # quality check done: never drawn twice (spec 006 R4)
+			"scrap_rate": 0.0,   # rate applied at the quality check, reported in job_completed
 		}
 		state.next_job_id += 1
 		target["jobs"].append(job)
@@ -525,6 +527,8 @@ static func _resolve_constructions(state: GameState) -> Array:
 ## At most one job completes per instance per day.
 static func _resolve_production(state: GameState, data: GameData) -> Array:
 	var events: Array = []
+	# One shared stream for the whole step: instances draw in ascending id order.
+	var rng := SimRng.for_stream(state, SimRng.PRODUCTION)
 	for facility in state.facilities:
 		if facility["status"] != "ready" or facility["jobs"].is_empty():
 			continue
@@ -537,7 +541,7 @@ static func _resolve_production(state: GameState, data: GameData) -> Array:
 		if job["progress"] < int(recipe["work_points"]):
 			job["progress"] += mini(int(facility["assigned"]), int(def["slots"])) * int(def["productivity_per_slot"])
 		if job["progress"] >= int(recipe["work_points"]):
-			_finish_job(state, data, facility, job, recipe, events)
+			_finish_job(state, data, facility, job, recipe, events, rng)
 	return events
 
 
@@ -573,8 +577,22 @@ static func _start_job(state: GameState, data: GameData, facility: Dictionary,
 
 
 static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
-		job: Dictionary, recipe: Dictionary, events: Array) -> void:
+		job: Dictionary, recipe: Dictionary, events: Array, rng: RandomNumberGenerator) -> void:
 	var output: Dictionary = recipe["output"]
+	# Quality check (spec 006 R4): once per job; a recipe without scrap draws nothing.
+	if not job["qc_passed"]:
+		var rate := SimQueries.scrap_rate(state, data, job["recipe_id"])
+		var scrapped := rate > 0.0 and rng.randf() < rate
+		state.recipe_attempts[job["recipe_id"]] = int(state.recipe_attempts.get(job["recipe_id"], 0)) + 1
+		job["scrap_rate"] = rate
+		if scrapped:
+			facility["jobs"].pop_front()
+			events.append(_event("job_scrapped", {
+				"job_id": job["id"], "facility_id": facility["id"],
+				"recipe_id": job["recipe_id"], "scrap_rate": rate,
+			}))
+			return
+		job["qc_passed"] = true
 	if output.has("component_id"):
 		var component_id: String = output["component_id"]
 		var qty := int(output["quantity"])
@@ -597,7 +615,9 @@ static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
 			"launcher_id": launcher["id"], "model": launcher["model"], "facility_id": facility["id"],
 		}))
 	facility["jobs"].pop_front()
-	events.append(_event("job_completed", {"job_id": job["id"], "output": output.duplicate(true)}))
+	events.append(_event("job_completed", {
+		"job_id": job["id"], "output": output.duplicate(true), "scrap_rate": job["scrap_rate"],
+	}))
 
 
 static func _hall_has_room(state: GameState, data: GameData, facility: Dictionary) -> bool:
