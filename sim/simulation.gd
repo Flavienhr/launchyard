@@ -67,6 +67,12 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_cancel_launch(state, command.args)
 		Command.ACCEPT_CONTRACT:
 			return _apply_accept_contract(state, command.args, data)
+		Command.SIGN_SUPPLY_CONTRACT:
+			return SupplyRules.sign(state, data, command.args)
+		Command.SKIP_SUPPLY_DELIVERY:
+			return SupplyRules.skip(state, data, command.args)
+		Command.TERMINATE_SUPPLY_CONTRACT:
+			return SupplyRules.terminate(state, data, command.args)
 	return [_rejected("unknown_command", command)]
 
 
@@ -477,7 +483,8 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	if state.game_over:  # spec 004 R4 : la partie est finie, le jour n'avance plus
 		return []
 	var events: Array = []
-	events.append_array(_resolve_deliveries(state, data))
+	var supply_flows := {"penalties": 0}  # supplier penalties earned at step 2, credited at step 8
+	events.append_array(_resolve_deliveries(state, data, supply_flows))
 	events.append_array(_resolve_constructions(state))
 	events.append_array(_resolve_production(state, data))
 	events.append_array(_resolve_pads(state))
@@ -486,15 +493,16 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_market(state, data))
 	events.append_array(_resolve_price_market(state, data))
 	events.append_array(_resolve_contract_deadlines(state, data))
-	events.append_array(_resolve_finances(state, data, launch_costs))
+	events.append_array(_resolve_finances(state, data, launch_costs, supply_flows))
 	events.append_array(_resolve_bankruptcy(state, data))
 	state.day += 1
 	return events
 
 
-static func _resolve_deliveries(state: GameState, data: GameData) -> Array:
+static func _resolve_deliveries(state: GameState, data: GameData, supply_flows := {}) -> Array:
 	var rng := SimRng.for_stream(state, SimRng.DELIVERIES)
-	var events: Array = []
+	# Scheduled supply deliveries are shipped first (spec 007 R5), then go through the normal flow.
+	var events: Array = SupplyRules.dispatch_due(state, data)
 	var still_pending: Array = []
 	var tomorrow := state.day + 1
 	for order in state.pending_orders:
@@ -509,9 +517,12 @@ static func _resolve_deliveries(state: GameState, data: GameData) -> Array:
 			if rng.randf() < float(supplier["delay_chance"]):
 				var delay := int(supplier["delay_days"])
 				order["arrival_day"] += delay
+				if order.has("contract_id"):
+					order["delay_days"] = delay  # drawn delay only, basis of the late penalty (R6)
 				events.append(_event("delivery_delayed", {
 					"order_id": order["id"], "supplier_id": order["supplier_id"],
 					"delay_days": delay, "arrival_day": order["arrival_day"],
+					"contract_id": order.get("contract_id"),
 				}))
 				still_pending.append(order)
 				continue
@@ -520,14 +531,25 @@ static func _resolve_deliveries(state: GameState, data: GameData) -> Array:
 		var units := int(order["quantity"]) * int(data.components[component_id]["storage_units"])
 		if units > storage_capacity(state, data) - storage_used(state, data):
 			# The truck waits at the gate and retries tomorrow.
-			events.append(_event("warehouse_full", {"order_id": order["id"]}))
+			if order.has("contract_id"):
+				order["waiting_for_space"] = true  # holding fees from now on (R6)
+			events.append(_event("warehouse_full", {"order_id": order["id"], "contract_id": order.get("contract_id")}))
 			still_pending.append(order)
 			continue
 
 		state.stock[component_id] = int(state.stock.get(component_id, 0)) + int(order["quantity"])
 		events.append(_event("delivery_received", {
 			"order_id": order["id"], "component_id": component_id, "quantity": order["quantity"],
+			"contract_id": order.get("contract_id"),
 		}))
+		if order.has("contract_id"):
+			var penalty := SupplyRules.late_penalty(data, order)
+			if penalty > 0:
+				supply_flows["penalties"] = int(supply_flows.get("penalties", 0)) + penalty
+				events.append(_event("supply_penalty_earned", {
+					"contract_id": order["contract_id"], "order_id": order["id"],
+					"days_late": order["delay_days"], "amount": penalty,
+				}))
 	state.pending_orders = still_pending
 	return events
 
@@ -765,7 +787,7 @@ static func _change_reputation(state: GameState, data: GameData, delta: int) -> 
 	})
 
 
-static func _resolve_finances(state: GameState, data: GameData, launch_costs := {}) -> Array:
+static func _resolve_finances(state: GameState, data: GameData, launch_costs := {}, supply_flows := {}) -> Array:
 	var upkeep := 0
 	for facility in state.facilities:
 		if facility["status"] == "ready":  # spec 001 R2: no upkeep while building
@@ -775,9 +797,12 @@ static func _resolve_finances(state: GameState, data: GameData, launch_costs := 
 		salaries = state.technicians_hired * int(data.staff["technician"]["technician_salary_per_day"])
 	var scrub_costs: int = launch_costs.get("scrub_costs", 0)
 	var refurb_costs: int = launch_costs.get("refurb_costs", 0)
-	state.money -= upkeep + salaries + scrub_costs + refurb_costs
+	var holding_fees := SupplyRules.holding_fees(state, data)  # spec 007 R6
+	var supply_penalties: int = supply_flows.get("penalties", 0)  # credit
+	state.money -= upkeep + salaries + scrub_costs + refurb_costs + holding_fees - supply_penalties
 	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep, "salaries": salaries,
-		"scrub_costs": scrub_costs, "refurb_costs": refurb_costs})]
+		"scrub_costs": scrub_costs, "refurb_costs": refurb_costs,
+		"holding_fees": holding_fees, "supply_penalties": supply_penalties})]
 	if state.money < 0:
 		events.append(_event("negative_balance", {"money": state.money}))
 	return events
