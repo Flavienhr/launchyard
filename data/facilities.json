@@ -48,6 +48,51 @@
       "refurb_cost": 5000,
       "refurb_days_after_failure": 12,
       "refurb_cost_after_failure": 20000
+    },
+    {
+      "id": "composite_shop",
+      "name": "Atelier composites",
+      "upkeep_per_day": 100,
+      "buildable": true,
+      "build_cost": 20000,
+      "build_days": 8,
+      "max_count": 1,
+      "slots": 2,
+      "productivity_per_slot": 10
+    },
+    {
+      "id": "electronics_lab",
+      "name": "Laboratoire avionique",
+      "upkeep_per_day": 250,
+      "buildable": true,
+      "build_cost": 45000,
+      "build_days": 12,
+      "max_count": 1,
+      "slots": 2,
+      "productivity_per_slot": 10
+    },
+    {
+      "id": "machine_shop",
+      "name": "Atelier d'usinage",
+      "upkeep_per_day": 300,
+      "buildable": true,
+      "build_cost": 60000,
+      "build_days": 14,
+      "max_count": 1,
+      "slots": 3,
+      "productivity_per_slot": 10
+    },
+    {
+      "id": "engine_shop",
+      "name": "Atelier moteurs",
+      "upkeep_per_day": 700,
+      "buildable": true,
+      "build_cost": 140000,
+      "build_days": 20,
+      "max_count": 1,
+      "slots": 4,
+      "productivity_per_slot": 10,
+      "requires_facilities": ["machine_shop"]
     }
   ]
 }

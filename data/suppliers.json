@@ -56,6 +56,46 @@
       "catalog": [
         { "component_id": "fairing", "unit_price": 5000, "lead_time_days": 7 }
       ]
+    },
+    {
+      "id": "valmorin_fonderies",
+      "name": "Valmorin Fonderies",
+      "delay_chance": 0.05,
+      "delay_days": 1,
+      "catalog": [
+        { "component_id": "alloy_billet", "unit_price": 550, "lead_time_days": 3 }
+      ],
+      "_note": "Spec 006 : lingots, rapide et cher, fiable."
+    },
+    {
+      "id": "kessring_metals",
+      "name": "Kessring Metals",
+      "delay_chance": 0.25,
+      "delay_days": 3,
+      "catalog": [
+        { "component_id": "alloy_billet", "unit_price": 430, "lead_time_days": 7 }
+      ],
+      "_note": "Spec 006 : lingots, lent et peu fiable, moins cher."
+    },
+    {
+      "id": "maelis_composants",
+      "name": "Maëlis Composants",
+      "delay_chance": 0.1,
+      "delay_days": 2,
+      "catalog": [
+        { "component_id": "electronic_kit", "unit_price": 500, "lead_time_days": 4 }
+      ],
+      "_note": "Spec 006 : composants électroniques."
+    },
+    {
+      "id": "tessaline_fibres",
+      "name": "Tessaline Fibres",
+      "delay_chance": 0.1,
+      "delay_days": 2,
+      "catalog": [
+        { "component_id": "composite_roll", "unit_price": 350, "lead_time_days": 5 }
+      ],
+      "_note": "Spec 006 : fibre composite préimprégnée."
     }
   ]
 }

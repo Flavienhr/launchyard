@@ -77,6 +77,21 @@
           "work_points": {
             "type": "integer",
             "minimum": 1
+          },
+          "scrap_rate_start": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "scrap_rate_floor": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "scrap_rate_drop_per_attempt": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         },
         "patternProperties": {

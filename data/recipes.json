@@ -13,6 +13,46 @@
       "inputs": { "engine": 4, "tank": 2, "avionics": 2, "fairing": 1 },
       "output": { "launcher_model": "l1" },
       "work_points": 200
+    },
+    {
+      "id": "machine_turbopump",
+      "facility_type": "machine_shop",
+      "inputs": { "alloy_billet": 2 },
+      "output": { "component_id": "turbopump", "quantity": 1 },
+      "work_points": 60,
+      "scrap_rate_start": 0.20,
+      "scrap_rate_floor": 0.04,
+      "scrap_rate_drop_per_attempt": 0.02
+    },
+    {
+      "id": "build_engine",
+      "facility_type": "engine_shop",
+      "inputs": { "turbopump": 1, "alloy_billet": 2 },
+      "output": { "component_id": "engine", "quantity": 1 },
+      "work_points": 100,
+      "scrap_rate_start": 0.30,
+      "scrap_rate_floor": 0.05,
+      "scrap_rate_drop_per_attempt": 0.025
+    },
+    {
+      "id": "wire_avionics",
+      "facility_type": "electronics_lab",
+      "inputs": { "electronic_kit": 3 },
+      "output": { "component_id": "avionics", "quantity": 1 },
+      "work_points": 50,
+      "scrap_rate_start": 0.35,
+      "scrap_rate_floor": 0.08,
+      "scrap_rate_drop_per_attempt": 0.03
+    },
+    {
+      "id": "layup_fairing",
+      "facility_type": "composite_shop",
+      "inputs": { "composite_roll": 3 },
+      "output": { "component_id": "fairing", "quantity": 1 },
+      "work_points": 60,
+      "scrap_rate_start": 0.25,
+      "scrap_rate_floor": 0.05,
+      "scrap_rate_drop_per_attempt": 0.04
     }
   ]
 }

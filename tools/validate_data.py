@@ -196,6 +196,50 @@ def check_references(docs: dict, errors: list[str]) -> None:
     if "technicians" in start and total > start["technicians"]:
         errors.append(f"start.json: {total} techniciens affectés pour {start['technicians']} embauchés")
 
+    # Prérequis de construction (spec 006, R3) : types référencés, puis absence de cycle.
+    for fid, facility in facility_by_id.items():
+        for req in facility.get("requires_facilities", []):
+            if req not in facility_by_id:
+                errors.append(f"facilities.json: {fid} requiert une installation inconnue '{req}'")
+
+    def find_cycle(fid: str, path: list[str]) -> list[str] | None:
+        for req in facility_by_id.get(fid, {}).get("requires_facilities", []):
+            if req in path:
+                return path[path.index(req):] + [req]
+            if req in facility_by_id:
+                found = find_cycle(req, path + [req])
+                if found:
+                    return found
+        return None
+
+    for fid in facility_by_id:
+        cycle = find_cycle(fid, [fid])
+        if cycle:
+            errors.append(f"facilities.json: cycle de prérequis {' -> '.join(cycle)}")
+            break
+
+    # Rebut (spec 006, R4) : le plancher ne peut pas dépasser le taux de départ.
+    for recipe in docs.get("recipes", {}).get("recipes", []):
+        start_rate = recipe.get("scrap_rate_start", 0)
+        floor_rate = recipe.get("scrap_rate_floor", 0)
+        if floor_rate > start_rate:
+            errors.append(
+                f"recipes.json: {recipe.get('id')} a scrap_rate_floor ({floor_rate}) "
+                f"> scrap_rate_start ({start_rate})")
+
+    # Chaîne de production (spec 006, Données) : un composant non achetable consommé
+    # par une recette doit être produit par au moins une recette, sinon la chaîne est morte.
+    all_recipes = docs.get("recipes", {}).get("recipes", [])
+    sold_ids = {e.get("component_id") for s in docs.get("suppliers", {}).get("suppliers", [])
+                for e in s.get("catalog", [])}
+    produced_ids = {r.get("output", {}).get("component_id") for r in all_recipes}
+    consumed_ids = {c for r in all_recipes for c in r.get("inputs", {})}
+    for component_id in sorted(consumed_ids - sold_ids):
+        if component_id not in produced_ids:
+            errors.append(
+                f"recipes.json: '{component_id}' n'est vendu par aucun fournisseur "
+                f"et n'est produit par aucune recette")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

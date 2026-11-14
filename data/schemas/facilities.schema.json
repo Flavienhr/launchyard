@@ -87,6 +87,14 @@
           "refurb_cost_after_failure": {
             "type": "integer",
             "minimum": 0
+          },
+          "requires_facilities": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
           }
         },
         "patternProperties": {
