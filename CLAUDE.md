@@ -30,6 +30,7 @@ make balance    # simule N parties et produit un rapport
 4. Une décision d'architecture → un nouvel ADR dans `docs/adr/`, jamais une décision implicite dans le code.
 5. Ne lis pas de gros fichiers en entier si `grep` suffit. Ne colle pas de logs complets : extrais l'erreur.
 6. Ne commit et ne push **jamais** sans demande explicite de Flavien. Jamais de push sur `main`.
+7. Travail en worktree : crée et vérifie ta branche (`git checkout -b … origin/main` puis `git branch --show-current`). **Jamais de `git stash`** : la pile est partagée entre tous les worktrees, un `pop` peut récupérer le travail d'un autre agent. Pour comparer avec main : `git show origin/main:chemin`.
 
 ## Conventions
 - Code et identifiants en **anglais**. Docs, specs et ADR en **français**.
