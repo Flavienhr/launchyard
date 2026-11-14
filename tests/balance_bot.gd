@@ -39,6 +39,17 @@ const WORKSHOP := "workshop"
 const INTEGRATE_STAGED := "integrate_staged"
 const INTEGRATE_GREEDY := "integrate_greedy"
 const ENGINES_ONLY := "engines_only"
+# Spec 007 strategies: buy_all's spot buying plus supply contracts.
+const CONTRACT_ENGINES := "contract_engines"
+const CONTRACT_FULL_KIT := "contract_full_kit"
+const CONTRACT_OVERCOMMIT := "contract_overcommit"
+const OPPORTUNIST := "opportunist"
+
+## Bot parameters (spec 007, "Découpage" 6: not balance values, they live here).
+const OPPORTUNIST_INDEX := 950            # sign when a kit component's index (permille) is below
+const OPPORTUNIST_DELIVERIES := 6         # deliveries of the opportunist's contracts
+const OVERCOMMIT_SKIP_STORAGE_PCT := 80   # skip a delivery above this warehouse occupancy (%)
+const FIXED := "fixed"
 
 ## Build order of the integrated strategies and number of stages used by engines_only.
 const STAGES := ["tank_shop", "machine_shop", "engine_shop", "electronics_lab", "composite_shop"]
@@ -99,6 +110,18 @@ var capacity_blocked_days := 0      # days on which a wanted purchase was cut by
 var shortage_orders := 0            # orders placed while their component was in shortage
 var shortage_units := 0
 
+# Spec 007 metrics.
+var contracts_signed := 0
+var deliveries_skipped := 0
+var holding_fees_paid := 0
+var take_or_pay_paid := 0
+var termination_paid := 0
+var penalties_earned := 0
+var reduced_deliveries := 0          # contract deliveries cut by a shortage
+var shortage_blocked_days := 0       # days the next assembly lacked a part that was in shortage
+var index_sum := {}                  # component -> sum of the daily market index
+var index_days := 0
+
 var _backlog := {}                  # component -> units still to order (capacity ran out)
 var _blocked_day := {}              # component -> last day an order of it was rejected / cut
 var _capacity_day := -1             # last day counted in capacity_blocked_days
@@ -129,6 +152,10 @@ static func is_integrated(strategy: String) -> bool:
 	return strategy in [INTEGRATE_STAGED, INTEGRATE_GREEDY, ENGINES_ONLY]
 
 
+static func is_contract(strategy: String) -> bool:
+	return strategy in [CONTRACT_ENGINES, CONTRACT_FULL_KIT, CONTRACT_OVERCOMMIT, OPPORTUNIST]
+
+
 ## Plays until `days` days have elapsed, or bankruptcy.
 func play(days: int) -> void:
 	_horizon = days
@@ -138,6 +165,8 @@ func play(days: int) -> void:
 			_workshop_id = int(events[0]["facility_id"])
 	while state.day < days and not state.game_over:
 		_flush_backlog()
+		if is_contract(strategy):
+			_manage_supply_contracts()
 		if is_integrated(strategy):
 			_build_next()
 			_staff_workshops()
@@ -205,6 +234,16 @@ func _observe_day(events: Array) -> void:
 					first_shot_day = day
 			"facility_built":
 				built_day[event["facility_type"]] = day
+			"daily_costs":
+				holding_fees_paid += int(event.get("holding_fees", 0))
+				penalties_earned += int(event.get("supply_penalties", 0))
+			"supply_delivery_skipped":
+				deliveries_skipped += 1
+				take_or_pay_paid += int(event["cost"])
+			"supply_contract_terminated":
+				termination_paid += int(event["fee"])
+			"supply_delivery_reduced":
+				reduced_deliveries += 1
 			"job_scrapped":
 				scrapped[event["recipe_id"]] = int(scrapped.get(event["recipe_id"], 0)) + 1
 			"job_completed":
@@ -219,6 +258,7 @@ func _observe_day(events: Array) -> void:
 	_track_running_costs()
 	_track_scrap_floor(day)
 	_track_wait()
+	_track_market()
 	if shot:
 		money_at_shot.append(state.money)
 		for chain in CHAINS:
@@ -294,9 +334,13 @@ func _track_wait() -> void:
 	match hall["jobs"][0]["blocked"]:
 		"missing_inputs":
 			var inputs: Dictionary = data.recipes[hall["jobs"][0]["recipe_id"]]["inputs"]
+			var in_shortage := false
 			for component_id in inputs:
 				if int(state.stock.get(component_id, 0)) < int(inputs[component_id]):
 					_wait_days[component_id] = int(_wait_days.get(component_id, 0)) + 1
+					in_shortage = in_shortage or _in_shortage(component_id)
+			if in_shortage:
+				shortage_blocked_days += 1
 		"hall_occupied":
 			_wait_days[HALL_PAD] = int(_wait_days.get(HALL_PAD, 0)) + 1
 
@@ -453,6 +497,8 @@ func _order_kit() -> void:
 		_order_integrated_kit(hall)
 		return
 	var purchases := _kit_purchases()
+	if is_contract(strategy):
+		purchases = _net_of_contracts(purchases)
 	var cost := 0
 	for purchase in purchases:
 		cost += _spot_cost(purchase["component"], int(purchase["quantity"]))
@@ -988,3 +1034,150 @@ func _capacity_delay() -> int:
 		var periods := int(ceil(float(maxi(0, wanted - left_now)) / per_period))
 		worst = maxi(worst, periods * int(data.market["market_period_days"]))
 	return worst
+
+
+# --- 7. Supply contracts (spec 007) ---------------------------------------------------
+
+func _track_market() -> void:
+	var snapshot := SimQueries.market_snapshot(state, data)
+	for component_id in snapshot:
+		index_sum[component_id] = int(index_sum.get(component_id, 0)) + int(snapshot[component_id]["index"])
+	index_days += 1
+
+
+## Active supply contract of this bot on a component ({} if none).
+func _active_contract(component_id: String) -> Dictionary:
+	for contract in state.supply_contracts:
+		if contract["status"] == SupplyRules.ACTIVE and contract["component_id"] == component_id:
+			return contract
+	return {}
+
+
+## Supplier that offers contracts for a component (cheapest catalog price), "" if none.
+func _contract_supplier(component_id: String) -> String:
+	var best := ""
+	for supplier_id in data.suppliers:
+		var entry := data.catalog_entry(supplier_id, component_id)
+		if entry.is_empty() or not entry.has("contract_terms"):
+			continue
+		if best == "" or int(entry["unit_price"]) < int(data.catalog_entry(best, component_id)["unit_price"]):
+			best = supplier_id
+	return best
+
+
+## Smallest contract period of the data (the strategies sign "every 14 days").
+func _contract_period() -> int:
+	var options: Array = data.supply_contracts["period_options_days"]
+	return int(options.min())
+
+
+## Kit quantity of a component clamped to the supplier's contract terms.
+func _contract_quantity(component_id: String, supplier_id: String) -> int:
+	var terms: Dictionary = data.catalog_entry(supplier_id, component_id)["contract_terms"]
+	var wanted := int(data.recipes[LAUNCHER_RECIPE]["inputs"][component_id])
+	return clampi(wanted, int(terms["min_quantity"]), int(terms["max_quantity"]))
+
+
+## Signs a contract if the quote is valid and the cash covers its first invoice
+## plus one bought kit (the cash a player keeps to keep the hall fed).
+func _sign(component_id: String, quantity: int, deliveries: int, priority: bool) -> bool:
+	var supplier_id := _contract_supplier(component_id)
+	if supplier_id == "" or _active_contract(component_id).size() > 0:
+		return false
+	if SupplyRules.active_count(state) >= int(data.supply_contracts["max_supply_contracts"]):
+		return false
+	var args := {"supplier_id": supplier_id, "component_id": component_id, "quantity": quantity,
+		"period_days": _contract_period(), "deliveries": deliveries, "pricing": FIXED, "priority": priority}
+	var quote := SimQueries.supply_contract_quote(state, data, args)
+	if not quote["ok"]:
+		return false
+	if state.money < int(quote["invoice"]) + _bought_kit_cost():
+		return false
+	var event: Dictionary = _apply(Command.sign_supply_contract(supplier_id, component_id, quantity,
+		_contract_period(), deliveries, FIXED, priority))[0]
+	if event["type"] != "supply_contract_signed":
+		return false
+	contracts_signed += 1
+	return true
+
+
+func _manage_supply_contracts() -> void:
+	var max_deliveries := int(data.supply_contracts["max_deliveries"])
+	var inputs: Dictionary = data.recipes[LAUNCHER_RECIPE]["inputs"]
+	match strategy:
+		CONTRACT_ENGINES:
+			var engine := _engine_component()
+			_sign(engine, _contract_quantity(engine, _contract_supplier(engine)), max_deliveries, true)
+		CONTRACT_FULL_KIT:
+			var ids := inputs.keys()
+			ids.sort()
+			for component_id in ids:
+				var supplier_id := _contract_supplier(component_id)
+				if supplier_id != "":
+					_sign(component_id, _contract_quantity(component_id, supplier_id), max_deliveries, false)
+		CONTRACT_OVERCOMMIT:
+			var engine := _engine_component()
+			var terms: Dictionary = data.catalog_entry(_contract_supplier(engine), engine)["contract_terms"]
+			_sign(engine, int(terms["max_quantity"]), max_deliveries, false)
+			_skip_when_full()
+		OPPORTUNIST:
+			var snapshot := SimQueries.market_snapshot(state, data)
+			var ids := inputs.keys()
+			ids.sort()
+			for component_id in ids:
+				var supplier_id := _contract_supplier(component_id)
+				if supplier_id != "" and snapshot.has(component_id) \
+						and int(snapshot[component_id]["index"]) < OPPORTUNIST_INDEX:
+					_sign(component_id, _contract_quantity(component_id, supplier_id), OPPORTUNIST_DELIVERIES, false)
+
+
+## The kit component that is bought by contract in the engine strategies: the one with
+## the highest unit price in the kit (the engine), found from the data.
+func _engine_component() -> String:
+	var best := ""
+	var inputs: Dictionary = data.recipes[LAUNCHER_RECIPE]["inputs"]
+	for component_id in inputs:
+		if best == "" or int(_cheapest_price[component_id]) > int(_cheapest_price[best]):
+			best = component_id
+	return best
+
+
+## Overcommit: on the last day a delivery can still be skipped, skip it if the
+## warehouse (stock + goods on the way) is above OVERCOMMIT_SKIP_STORAGE_PCT.
+func _skip_when_full() -> void:
+	var capacity := Simulation.storage_capacity(state, data)
+	var used := Simulation.storage_used(state, data) + _incoming_units()
+	if capacity <= 0 or used * 100 <= capacity * OVERCOMMIT_SKIP_STORAGE_PCT:
+		return
+	var notice := int(data.supply_contracts["skip_notice_days"])
+	for contract in state.supply_contracts:
+		if contract["status"] != SupplyRules.ACTIVE or contract["skip_next"]:
+			continue
+		if int(contract["next_delivery_day"]) - state.day == notice \
+				and SupplyRules.skip_cost(state, data, contract) <= state.money:
+			_apply(Command.skip_supply_delivery(int(contract["id"])))
+
+
+## Units of a component that contracts will bring within the kit's lead time.
+func _planned_contract_units(component_id: String) -> int:
+	var contract := _active_contract(component_id)
+	if contract.is_empty() or contract["skip_next"]:
+		return 0
+	if int(contract["next_delivery_day"]) <= state.day + _kit_lead():
+		return int(contract["quantity"])
+	return 0
+
+
+## Spot purchases of a kit once the supply already in the warehouse, on its way or due
+## from a contract within the kit lead time is counted (contracts replace spot buying).
+func _net_of_contracts(purchases: Array) -> Array:
+	var out: Array = []
+	var ordered := SimQueries.on_order(state)
+	for purchase in purchases:
+		var component_id: String = purchase["component"]
+		var have := int(state.stock.get(component_id, 0)) + int(ordered.get(component_id, 0)) \
+			+ _planned_contract_units(component_id)
+		var need := int(purchase["quantity"]) - have
+		if need > 0:
+			out.append({"supplier": purchase["supplier"], "component": component_id, "quantity": need})
+	return out

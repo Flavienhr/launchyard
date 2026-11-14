@@ -18,7 +18,23 @@ extends SceneTree
 const STRATEGIES := [
 	BalanceBot.BUY_ALL, BalanceBot.WORKSHOP, BalanceBot.INTEGRATE_STAGED,
 	BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY,
+	BalanceBot.CONTRACT_ENGINES, BalanceBot.CONTRACT_FULL_KIT, BalanceBot.CONTRACT_OVERCOMMIT,
+	BalanceBot.OPPORTUNIST,
 ]
+## Strategies that build workshops (the commissioning and chain sections concern them).
+const BUILDERS := [
+	BalanceBot.WORKSHOP, BalanceBot.INTEGRATE_STAGED, BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY,
+]
+const CONTRACTORS := [
+	BalanceBot.CONTRACT_ENGINES, BalanceBot.CONTRACT_FULL_KIT, BalanceBot.CONTRACT_OVERCOMMIT,
+	BalanceBot.OPPORTUNIST,
+]
+## Spec 007 expectations (report only).
+const INDEX_MIN := 980
+const INDEX_MAX := 1080
+const SOLVENT_GAP_PCT := 10
+const VARIANCE_CUT_PCT := 25
+const OVERCOMMIT_MAX_BANKRUPT := 5
 const TARGET_MIN := 3
 const TARGET_MAX := 5
 const MIN_SAMPLES_PCT := 50  # a launcher index counts only if this % of seeds reached it
@@ -60,6 +76,7 @@ func _init() -> void:
 	_report_chains(runs)
 	_report_scrap(runs, days)
 	_report_market(runs)
+	_report_contracts(runs)
 	_report_bottleneck(runs)
 	var payback := _payback_section(runs, verbose)
 	_report_spec_checks(runs)
@@ -118,9 +135,7 @@ func _report_rejections(strategy: String, bots: Array) -> bool:
 func _report_commissioning(runs: Dictionary) -> void:
 	print("")
 	print("[mise en service] jour médian (parties où l'atelier existe)")
-	for strategy in STRATEGIES:
-		if strategy == BalanceBot.BUY_ALL:
-			continue
+	for strategy in BUILDERS:
 		var parts: Array[String] = []
 		for type in BalanceBot.STAGES:
 			var days: Array = []
@@ -138,9 +153,7 @@ func _report_commissioning(runs: Dictionary) -> void:
 func _report_chains(runs: Dictionary) -> void:
 	print("")
 	print("[rentabilisation par chaîne] lanceur médian où l'économie cumulée couvre construction + entretien + salaires ; net final médian")
-	for strategy in STRATEGIES:
-		if strategy == BalanceBot.BUY_ALL:
-			continue
+	for strategy in BUILDERS:
 		var parts: Array[String] = []
 		for chain in BalanceBot.CHAINS:
 			var paid: Array = []
@@ -222,6 +235,39 @@ func _report_market(runs: Dictionary) -> void:
 		var n: int = runs[strategy].size()
 		print("  %-17s %.1f jours bloqués ; %.1f commandes en pénurie (%.1f unités) ; %.1f jours d'attente de trésorerie" % [
 			strategy, float(blocked) / n, float(orders) / n, float(units) / n, float(cash) / n])
+
+
+## Spec 007 contract metrics, per game (mean), and the mean market index per component.
+func _report_contracts(runs: Dictionary) -> void:
+	print("")
+	print("[contrats] par partie (moy.) : signés, livraisons sautées, frais de garde, take-or-pay, résiliation, pénalités perçues ; livraisons réduites ; jours bloqués en pénurie")
+	for strategy in STRATEGIES:
+		var sums := [0, 0, 0, 0, 0, 0, 0, 0]
+		for bot: BalanceBot in runs[strategy]:
+			var values := [bot.contracts_signed, bot.deliveries_skipped, bot.holding_fees_paid,
+				bot.take_or_pay_paid, bot.termination_paid, bot.penalties_earned,
+				bot.reduced_deliveries, bot.shortage_blocked_days]
+			for i in sums.size():
+				sums[i] += values[i]
+		var n: int = runs[strategy].size()
+		print("  %-19s %4.1f signés, %4.1f sautées, garde %7.0f, take-or-pay %7.0f, résil. %6.0f, pénalités +%6.0f ; %4.1f réduites ; %5.1f j bloqués" % [
+			strategy, float(sums[0]) / n, float(sums[1]) / n, float(sums[2]) / n, float(sums[3]) / n,
+			float(sums[4]) / n, float(sums[5]) / n, float(sums[6]) / n, float(sums[7]) / n])
+	print("  indice moyen observé (buy_all) : %s" % _index_line(runs[BalanceBot.BUY_ALL]))
+
+
+func _index_line(bots: Array) -> String:
+	var parts: Array[String] = []
+	var ids: Array = bots[0].index_sum.keys()
+	ids.sort()
+	for component_id in ids:
+		var total := 0
+		var days := 0
+		for bot: BalanceBot in bots:
+			total += int(bot.index_sum[component_id])
+			days += bot.index_days
+		parts.append("%s %d" % [component_id, total / maxi(1, days)])
+	return ", ".join(PackedStringArray(parts))
 
 
 ## Bottleneck: for each launcher, the resource its assembly waited for the longest.
@@ -331,8 +377,64 @@ func _report_spec_checks(runs: Dictionary) -> void:
 		for bot: BalanceBot in runs[strategy]:
 			if bot.scrap_floor_day.has("build_engine") and bot.built_day.has("engine_shop"):
 				floors.append(bot.scrap_floor_day["build_engine"])
+	_report_contract_checks(runs)
 	print("  plancher de rebut moteur : jour %s au plus tôt, médiane %s (pas avant ~120)" % [
 		str(floors.min()) if not floors.is_empty() else "-", str(_percentile(floors, 50)) if not floors.is_empty() else "-"])
+
+
+## Spec 007 expectations ("Ce que make balance doit montrer"), values next to the targets.
+func _report_contract_checks(runs: Dictionary) -> void:
+	var buy_all: Array = runs[BalanceBot.BUY_ALL]
+	var low := 1 << 30
+	var high := 0
+	var bots: Array = buy_all
+	for component_id in bots[0].index_sum:
+		var total := 0
+		var days := 0
+		for bot: BalanceBot in bots:
+			total += int(bot.index_sum[component_id])
+			days += bot.index_days
+		low = mini(low, total / maxi(1, days))
+		high = maxi(high, total / maxi(1, days))
+	print("  indice moyen par composant : %d à %d (dans [%d, %d])" % [low, high, INDEX_MIN, INDEX_MAX])
+	var best := BalanceBot.CONTRACT_ENGINES
+	for strategy in CONTRACTORS:
+		if _median_money(runs[strategy]) > _median_money(runs[best]):
+			best = strategy
+	print("  buy_all vs meilleure stratégie à contrats (%s) : %+.1f%% (écart < %d%%)" % [
+		best, _gain_pct(runs[best], buy_all), SOLVENT_GAP_PCT])
+	var spread_all := _percentile(_money(buy_all), 90) - _percentile(_money(buy_all), 10)
+	var engines: Array = runs[BalanceBot.CONTRACT_ENGINES]
+	var spread_eng := _percentile(_money(engines), 90) - _percentile(_money(engines), 10)
+	print("  contract_engines, écart P90-P10 : %d contre %d pour buy_all (%+.0f%%, cible -%d%% ou mieux) ; P10 %d contre %d" % [
+		spread_eng, spread_all, 100.0 * (spread_eng - spread_all) / maxf(1.0, spread_all), VARIANCE_CUT_PCT,
+		_percentile(_money(engines), 10), _percentile(_money(buy_all), 10)])
+	var lowest := BalanceBot.CONTRACT_ENGINES
+	for strategy in CONTRACTORS:
+		if _median_money(runs[strategy]) < _median_money(runs[lowest]):
+			lowest = strategy
+	print("  médiane la plus basse des stratégies à contrats : %s (attendu contract_overcommit) ; faillites overcommit %d (<= %d)" % [
+		lowest, _bankruptcies(runs[BalanceBot.CONTRACT_OVERCOMMIT]), OVERCOMMIT_MAX_BANKRUPT])
+	print("  opportunist vs buy_all, argent final médian : %+.1f%% (>= 0)" % _gain_pct(buy_all, runs[BalanceBot.OPPORTUNIST]))
+	var blocked_staged := 0
+	var blocked_all := 0
+	for bot: BalanceBot in runs[BalanceBot.INTEGRATE_STAGED]:
+		blocked_staged += bot.shortage_blocked_days
+	for bot: BalanceBot in buy_all:
+		blocked_all += bot.shortage_blocked_days
+	print("  jours bloqués en pénurie par partie : integrate_staged %.1f contre buy_all %.1f (moins)" % [
+		float(blocked_staged) / runs[BalanceBot.INTEGRATE_STAGED].size(), float(blocked_all) / buy_all.size()])
+
+
+func _money(bots: Array) -> Array:
+	var out: Array = []
+	for bot: BalanceBot in bots:
+		out.append(bot.state.money)
+	return out
+
+
+func _median_money(bots: Array) -> int:
+	return _percentile(_money(bots), 50)
 
 
 ## Relative difference of the median final money, `other` over `base`, in %.
