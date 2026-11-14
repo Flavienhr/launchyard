@@ -66,7 +66,8 @@ static func recipes_for(data: GameData, facility_type: String) -> Array:
 	return ids
 
 
-## Buildable facility types: {type, name, cost, days, upkeep, count, max_count, remaining}.
+## Buildable facility types: {type, name, cost, days, upkeep, count, max_count, remaining,
+## requires: [{type, name, ready}], missing: [type ids without a ready instance]}.
 static func build_options(state: GameState, data: GameData) -> Array:
 	var options: Array = []
 	for type in data.facilities:
@@ -77,7 +78,15 @@ static func build_options(state: GameState, data: GameData) -> Array:
 		for facility in state.facilities:
 			if facility["type"] == type:
 				count += 1
+		var requires: Array = []
+		var missing: Array = []
+		for required in def.get("requires_facilities", []):
+			var ready := _has_ready(state, required)
+			requires.append({"type": required, "name": data.facilities[required]["name"], "ready": ready})
+			if not ready:
+				missing.append(required)
 		options.append({
+			"requires": requires, "missing": missing,
 			"type": type, "name": def["name"], "cost": int(def["build_cost"]),
 			"days": int(def["build_days"]), "upkeep": int(def["upkeep_per_day"]),
 			"count": count, "max_count": int(def["max_count"]),
@@ -168,12 +177,19 @@ static func order_quote(state: GameState, data: GameData, supplier_id: String,
 	}
 
 
-## Buy vs make comparison for a component.
+## Buy vs make comparison for a component (spec 006 R6).
 ## {component_id, offers, buy: cheapest offer or {}, make: {} if no recipe else
 ## {recipe_id, facility_type, material_cost, days, ready}}.
 ## material_cost = inputs at the cheapest supplier price per unit produced
 ## (-1 if an input has no supplier). days = job duration at the current
 ## assignment of the best ready facility (-1 if none can work).
+## The chain of intermediate parts is followed (an input without supplier is
+## made by its own recipe). Extra fields in make: effective_cost = material cost
+## inflated by the current scrap rates (a scrapped piece still consumed its
+## inputs; -1 if impossible), success_rate = product of (1 - rate) along the
+## chain, steps = [{recipe_id, facility_type, scrap_rate}] (root first),
+## missing_facilities = [{type, name, requires: [names], requires_missing:
+## [names]}] for chain types without a ready instance.
 static func buy_vs_make(state: GameState, data: GameData, component_id: String) -> Dictionary:
 	var offers := supplier_offers(data, component_id)
 	var result := {
@@ -188,27 +204,24 @@ static func buy_vs_make(state: GameState, data: GameData, component_id: String) 
 		var recipe: Dictionary = data.recipes[recipe_id]
 		if recipe["output"].get("component_id", "") != component_id:
 			continue
-		var cost := 0
-		for input_id in recipe["inputs"]:
-			var input_offers := supplier_offers(data, input_id)
-			if input_offers.is_empty():
-				cost = -1
-				break
-			cost += int(recipe["inputs"][input_id]) * int(input_offers[0]["unit_price"])
-		if cost > 0:
-			cost = cost / maxi(int(recipe["output"]["quantity"]), 1)
+		var cost := _material_cost(data, recipe_id, 0)
+		var chain := _make_chain(state, data, recipe_id)
 		var best_rate := 0
-		var has_ready := false
 		for facility in state.facilities:
 			if facility["type"] == recipe["facility_type"] and facility["status"] == "ready":
-				has_ready = true
 				best_rate = maxi(best_rate, facility_rate(data, facility))
 		var days := -1
 		if best_rate > 0:
 			days = maxi(1, ceili(float(recipe["work_points"]) / best_rate))
+		var effective := _effective_cost(state, data, recipe_id, 0)
+		var success := 1.0
+		for step in chain["steps"]:
+			success *= 1.0 - float(step["scrap_rate"])
 		result["make"] = {
 			"recipe_id": recipe_id, "facility_type": recipe["facility_type"],
-			"material_cost": cost, "days": days, "ready": has_ready,
+			"material_cost": cost, "days": days, "ready": _has_ready(state, recipe["facility_type"]),
+			"effective_cost": effective, "success_rate": success,
+			"steps": chain["steps"], "missing_facilities": chain["missing"],
 		}
 		break
 	return result
@@ -571,6 +584,121 @@ static func scrap_rate(state: GameState, data: GameData, recipe_id: String) -> f
 	var start := float(recipe.get("scrap_rate_start", 0))
 	var drop := float(recipe.get("scrap_rate_drop_per_attempt", 0))
 	return maxf(float(recipe.get("scrap_rate_floor", 0)), start - drop * attempts)
+
+
+static func _has_ready(state: GameState, facility_type: String) -> bool:
+	for facility in state.facilities:
+		if facility["type"] == facility_type and facility["status"] == "ready":
+			return true
+	return false
+
+
+## Recipe producing a component, "" if none (first by id).
+static func _recipe_making(data: GameData, component_id: String) -> String:
+	var ids: Array = data.recipes.keys()
+	ids.sort()
+	for recipe_id in ids:
+		if data.recipes[recipe_id]["output"].get("component_id", "") == component_id:
+			return recipe_id
+	return ""
+
+
+const _MAX_CHAIN_DEPTH := 6
+
+
+## Cost of one unit of a component when sourced the cheapest way: supplier price,
+## else its own recipe (scrap included). -1 if neither exists.
+static func _sourcing_cost(state: GameState, data: GameData, component_id: String, depth: int) -> int:
+	var offers := supplier_offers(data, component_id)
+	if not offers.is_empty():
+		return int(offers[0]["unit_price"])
+	var recipe_id := _recipe_making(data, component_id)
+	if recipe_id == "" or depth >= _MAX_CHAIN_DEPTH:
+		return -1
+	return _effective_cost(state, data, recipe_id, depth + 1)
+
+
+## Raw material cost per unit, scrap ignored, intermediate parts expanded (-1 if unsourceable).
+static func _material_cost(data: GameData, recipe_id: String, depth: int) -> int:
+	var recipe: Dictionary = data.recipes[recipe_id]
+	var cost := 0
+	for input_id in recipe["inputs"]:
+		var offers := supplier_offers(data, input_id)
+		var unit := -1
+		if not offers.is_empty():
+			unit = int(offers[0]["unit_price"])
+		else:
+			var sub := _recipe_making(data, input_id)
+			if sub != "" and depth < _MAX_CHAIN_DEPTH:
+				unit = _material_cost(data, sub, depth + 1)
+		if unit < 0:
+			return -1
+		cost += int(recipe["inputs"][input_id]) * unit
+	return cost / maxi(int(recipe["output"].get("quantity", 1)), 1)
+
+
+## Cost per good unit: inputs cost / (quantity * (1 - current scrap rate)).
+static func _effective_cost(state: GameState, data: GameData, recipe_id: String, depth: int) -> int:
+	var recipe: Dictionary = data.recipes[recipe_id]
+	var total := 0
+	for input_id in recipe["inputs"]:
+		var unit := _sourcing_cost(state, data, input_id, depth)
+		if unit < 0:
+			return -1
+		total += int(recipe["inputs"][input_id]) * unit
+	var success := 1.0 - scrap_rate(state, data, recipe_id)
+	if success <= 0.0:
+		return -1
+	return ceili(float(total) / (maxi(int(recipe["output"].get("quantity", 1)), 1) * success))
+
+
+## Recipes and missing facility types along the make chain of a recipe.
+static func _make_chain(state: GameState, data: GameData, recipe_id: String) -> Dictionary:
+	var steps: Array = []
+	var missing: Array = []
+	var seen: Dictionary = {}
+	var queue: Array = [recipe_id]
+	var depth := 0
+	while not queue.is_empty() and depth < 16:
+		depth += 1
+		var current: String = queue.pop_front()
+		var recipe: Dictionary = data.recipes[current]
+		var type: String = recipe["facility_type"]
+		steps.append({"recipe_id": current, "facility_type": type,
+			"scrap_rate": scrap_rate(state, data, current)})
+		if not seen.has(type) and not _has_ready(state, type):
+			seen[type] = true
+			var def: Dictionary = data.facilities[type]
+			var reqs: Array = []
+			var reqs_missing: Array = []
+			for required in def.get("requires_facilities", []):
+				var rname: String = data.facilities[required]["name"]
+				reqs.append(rname)
+				if not _has_ready(state, required):
+					reqs_missing.append(rname)
+			missing.append({"type": type, "name": def["name"], "requires": reqs,
+				"requires_missing": reqs_missing})
+		for input_id in recipe["inputs"]:
+			if supplier_offers(data, input_id).is_empty():
+				var sub := _recipe_making(data, input_id)
+				if sub != "":
+					queue.append(sub)
+	return {"steps": steps, "missing": missing}
+
+
+## Scrap curve of a recipe for display: {start, current, floor, attempts,
+## attempts_to_floor (0 when already at the floor)}.
+static func scrap_info(state: GameState, data: GameData, recipe_id: String) -> Dictionary:
+	var recipe: Dictionary = data.recipes[recipe_id]
+	var start := float(recipe.get("scrap_rate_start", 0))
+	var drop := float(recipe.get("scrap_rate_drop_per_attempt", 0))
+	var floor_rate := float(recipe.get("scrap_rate_floor", 0))
+	var attempts := int(state.recipe_attempts.get(recipe_id, 0))
+	var to_floor := 0
+	if drop > 0.0 and start > floor_rate:
+		to_floor = maxi(0, ceili((start - floor_rate) / drop - 0.000001) - attempts)
+	return {"start": start, "current": scrap_rate(state, data, recipe_id), "floor": floor_rate,
+		"attempts": attempts, "attempts_to_floor": to_floor, "has_scrap": start > 0.0}
 
 
 # --- Market (spec 007) ---
