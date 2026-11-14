@@ -26,7 +26,7 @@
       "delay_chance": 0.2,
       "delay_days": 4,
       "catalog": [
-        { "component_id": "engine", "unit_price": 12000, "lead_time_days": 10, "spot_capacity_per_period": 8, "contract_terms": { "min_quantity": 4, "max_quantity": 16 } }
+        { "component_id": "engine", "unit_price": 12000, "lead_time_days": 10, "spot_capacity_per_period": 8, "contract_terms": { "min_quantity": 4, "max_quantity": 12 } }
       ],
       "_note": "Unique fournisseur de moteurs : dépendance volontaire, composant critique en délai (spec 001)."
     },

@@ -29,10 +29,10 @@
       "facility_type": "engine_shop",
       "inputs": { "turbopump": 1, "alloy_billet": 2 },
       "output": { "component_id": "engine", "quantity": 1 },
-      "work_points": 100,
+      "work_points": 80,
       "scrap_rate_start": 0.30,
       "scrap_rate_floor": 0.05,
-      "scrap_rate_drop_per_attempt": 0.025
+      "scrap_rate_drop_per_attempt": 0.015
     },
     {
       "id": "wire_avionics",

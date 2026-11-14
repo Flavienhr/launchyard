@@ -15,7 +15,7 @@
       "name": "Atelier de soudure",
       "upkeep_per_day": 300,
       "buildable": true,
-      "build_cost": 40000,
+      "build_cost": 30000,
       "build_days": 10,
       "max_count": 1,
       "slots": 3,
