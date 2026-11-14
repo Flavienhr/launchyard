@@ -14,6 +14,9 @@ const SCHEDULE_LAUNCH := &"schedule_launch"
 const RESCHEDULE_LAUNCH := &"reschedule_launch"
 const CANCEL_LAUNCH := &"cancel_launch"
 const ACCEPT_CONTRACT := &"accept_contract"
+const SIGN_SUPPLY_CONTRACT := &"sign_supply_contract"
+const SKIP_SUPPLY_DELIVERY := &"skip_supply_delivery"
+const TERMINATE_SUPPLY_CONTRACT := &"terminate_supply_contract"
 
 var type: StringName
 var args: Dictionary
@@ -76,6 +79,22 @@ static func cancel_launch(launch_id: int) -> Command:
 
 static func accept_contract(contract_id: int) -> Command:
 	return Command.new(ACCEPT_CONTRACT, {"contract_id": contract_id})
+
+
+static func sign_supply_contract(supplier_id: String, component_id: String, quantity: int,
+		period_days: int, deliveries: int, pricing: String, priority := false) -> Command:
+	return Command.new(SIGN_SUPPLY_CONTRACT, {
+		"supplier_id": supplier_id, "component_id": component_id, "quantity": quantity,
+		"period_days": period_days, "deliveries": deliveries, "pricing": pricing, "priority": priority,
+	})
+
+
+static func skip_supply_delivery(contract_id: int) -> Command:
+	return Command.new(SKIP_SUPPLY_DELIVERY, {"contract_id": contract_id})
+
+
+static func terminate_supply_contract(contract_id: int) -> Command:
+	return Command.new(TERMINATE_SUPPLY_CONTRACT, {"contract_id": contract_id})
 
 
 func to_dict() -> Dictionary:

@@ -25,6 +25,9 @@ var game_over: bool = false    # bankruptcy reached, spec 004 R3
 var recipe_attempts: Dictionary = {} # recipe_id -> jobs that reached quality control, spec 006 R4
 var market: Dictionary = MarketRules.empty_state() # {index, prev_index, shortages: id -> ends_day, spot_used}, spec 007
 
+var supply_contracts: Array = [] # see SupplyRules, spec 007 R4
+var next_supply_contract_id: int = 1
+
 
 func to_dict() -> Dictionary:
 	return {
@@ -50,6 +53,8 @@ func to_dict() -> Dictionary:
 		"game_over": game_over,
 		"recipe_attempts": recipe_attempts.duplicate(true),
 		"market": market.duplicate(true),
+		"supply_contracts": supply_contracts.duplicate(true),
+		"next_supply_contract_id": next_supply_contract_id,
 	}
 
 
@@ -77,6 +82,10 @@ static func from_dict(d: Dictionary) -> GameState:
 	for order in s.pending_orders:
 		for key in ["id", "quantity", "arrival_day"]:
 			order[key] = int(order[key])
+		# Optional fields of supply-contract orders (spec 007).
+		for key in ["contract_id", "scheduled_day", "invoice", "delay_days"]:
+			if order.has(key):
+				order[key] = int(order[key])
 	s.next_order_id = int(d["next_order_id"])
 	s.next_job_id = int(d["next_job_id"])
 	s.launchers = d["launchers"].duplicate(true)
@@ -104,6 +113,13 @@ static func from_dict(d: Dictionary) -> GameState:
 	for recipe_id in s.recipe_attempts:
 		s.recipe_attempts[recipe_id] = int(s.recipe_attempts[recipe_id])
 	s.market = _market_from_dict(d.get("market", MarketRules.empty_state()))
+	s.supply_contracts = d.get("supply_contracts", []).duplicate(true)
+	for contract in s.supply_contracts:
+		for key in ["id", "quantity", "period_days", "deliveries", "deliveries_done", "next_delivery_day",
+				"price_pct", "discount_pct", "contract_unit_price"]:
+			if contract.has(key):
+				contract[key] = int(contract[key])
+	s.next_supply_contract_id = int(d.get("next_supply_contract_id", 1))
 	return s
 
 
