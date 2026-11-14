@@ -31,7 +31,7 @@ playthrough: import ## Joue une partie scriptée « tout acheter » sur les vrai
 SEEDS ?= 40
 DAYS ?= 240
 VERBOSE ?=
-balance: import ## Bot d'équilibrage : make balance [SEEDS=40] [DAYS=240] [VERBOSE=1]
+balance: import ## Bot d'équilibrage : make balance [SEEDS=40] [DAYS=240|360] [VERBOSE=1]
 	@$(GODOT) --headless --path . -s tests/balance.gd -- --seeds=$(SEEDS) --days=$(DAYS) $(if $(VERBOSE),--verbose)
 
 export: import ## Export d'un preset : make export PRESET=macOS OUT=build/macos/launchyard.zip
