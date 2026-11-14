@@ -85,18 +85,29 @@ static func _apply_order(state: GameState, args: Dictionary, data: GameData) -> 
 		return [_rejected("not_in_catalog", Command.new(Command.ORDER, args))]
 	if quantity <= 0:
 		return [_rejected("invalid_quantity", Command.new(Command.ORDER, args))]
-	var cost := quantity * int(entry["unit_price"])
+	# Spec 007 R3: spot price, capacity per period, shortage lead time.
+	var capacity := MarketRules.spot_capacity(state, data, supplier_id, component_id)
+	if capacity != MarketRules.UNLIMITED:
+		var remaining := maxi(0, capacity - MarketRules.spot_used(state, supplier_id, component_id))
+		if quantity > remaining:
+			return [_rejected("supplier_capacity", Command.new(Command.ORDER, args), {"remaining": remaining})]
+	var unit_price := MarketRules.spot_price(state, data, int(entry["unit_price"]), component_id)
+	var cost := quantity * unit_price
 	if cost > state.money:
 		return [_rejected("insufficient_funds", Command.new(Command.ORDER, args))]
 
 	state.money -= cost
+	if capacity != MarketRules.UNLIMITED:
+		var key := MarketRules.spot_key(supplier_id, component_id)
+		state.market["spot_used"][key] = MarketRules.spot_used(state, supplier_id, component_id) + quantity
+	var lead_days := MarketRules.spot_lead_days(state, data, int(entry["lead_time_days"]), component_id)
 	var order := {
 		"id": state.next_order_id,
 		"supplier_id": supplier_id,
 		"component_id": component_id,
 		"quantity": quantity,
 		# Day on which the goods are available (start of day).
-		"arrival_day": state.day + int(entry["lead_time_days"]),
+		"arrival_day": state.day + lead_days,
 		"delay_rolled": false,
 	}
 	state.next_order_id += 1

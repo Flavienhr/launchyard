@@ -165,15 +165,21 @@ static func supplier_offers(data: GameData, component_id: String) -> Array:
 ## Quote for ordering `quantity` units of a component from a supplier:
 ## {total_cost, affordable, storage_units (needed), free_storage (now), fits}.
 ## fits = false means the truck would wait at the gate until space is freed.
+## Spec 007 R3: total_cost is priced at the spot price; unit_price = spot price
+## (-1 if not in the catalog); spot_capacity_remaining (-1 = unlimited);
+## within_capacity = the quantity fits the remaining spot capacity.
 static func order_quote(state: GameState, data: GameData, supplier_id: String,
 		component_id: String, quantity: int) -> Dictionary:
-	var entry := data.catalog_entry(supplier_id, component_id)
-	var total := quantity * int(entry.get("unit_price", 0))
+	var unit_price := spot_price(state, data, supplier_id, component_id)
+	var total := quantity * maxi(unit_price, 0)
 	var needed := quantity * int(data.components.get(component_id, {}).get("storage_units", 0))
 	var free := Simulation.storage_capacity(state, data) - Simulation.storage_used(state, data)
+	var remaining := spot_capacity_remaining(state, data, supplier_id, component_id)
 	return {
 		"total_cost": total, "affordable": total <= state.money,
 		"storage_units": needed, "free_storage": free, "fits": needed <= free,
+		"unit_price": unit_price, "spot_capacity_remaining": remaining,
+		"within_capacity": remaining == MarketRules.UNLIMITED or quantity <= remaining,
 	}
 
 
@@ -710,6 +716,17 @@ static func spot_price(state: GameState, data: GameData, supplier_id: String, co
 	if entry.is_empty():
 		return -1
 	return MarketRules.spot_price(state, data, int(entry["unit_price"]), component_id)
+
+
+## Spot units still buyable from a catalog entry this period (spec 007 R3).
+## -1 = unlimited (MarketRules.UNLIMITED); 0 if not in the catalog.
+static func spot_capacity_remaining(state: GameState, data: GameData, supplier_id: String, component_id: String) -> int:
+	if data.catalog_entry(supplier_id, component_id).is_empty():
+		return 0
+	var capacity := MarketRules.spot_capacity(state, data, supplier_id, component_id)
+	if capacity == MarketRules.UNLIMITED:
+		return MarketRules.UNLIMITED
+	return maxi(0, capacity - MarketRules.spot_used(state, supplier_id, component_id))
 
 
 ## Per component of market.json: {index, change (since the previous period),
