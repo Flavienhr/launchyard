@@ -6,6 +6,10 @@ extends RefCounted
 
 ## Unit of the index (1000 = catalog price), not a balance value.
 const PERMILLE := 1000
+## Unit of the percentages in market.json (reversion, shortage capacity).
+const PERCENT := 100
+## Value returned by the spot capacity queries when no cap applies.
+const UNLIMITED := -1
 
 
 static func empty_state() -> Dictionary:
@@ -63,6 +67,38 @@ static func effective_index(state: GameState, data: GameData, component_id: Stri
 ## Integer price, rounded half up (R1).
 static func spot_price(state: GameState, data: GameData, unit_price: int, component_id: String) -> int:
 	return (unit_price * effective_index(state, data, component_id) + PERMILLE / 2) / PERMILLE
+
+
+## Spec 007 R3: delivery delay of a spot order, shortage included.
+static func spot_lead_days(state: GameState, data: GameData, lead_time_days: int, component_id: String) -> int:
+	if in_shortage(state, data, component_id):
+		return lead_time_days + int(data.market["shortage_extra_lead_days"])
+	return lead_time_days
+
+
+## Spot capacity of a catalog entry for the current period (R3): the entry's
+## spot_capacity_per_period, scaled by shortage_capacity_pct during a shortage.
+## UNLIMITED when the market is inactive, the component is absent from
+## market.json, or the entry has no spot_capacity_per_period.
+static func spot_capacity(state: GameState, data: GameData, supplier_id: String, component_id: String) -> int:
+	if not is_active(data) or params(data, component_id).is_empty():
+		return UNLIMITED
+	var entry := data.catalog_entry(supplier_id, component_id)
+	if not entry.has("spot_capacity_per_period"):
+		return UNLIMITED
+	var capacity := int(entry["spot_capacity_per_period"])
+	if in_shortage(state, data, component_id):
+		capacity = capacity * int(data.market["shortage_capacity_pct"]) / PERCENT
+	return capacity
+
+
+## Spot units already bought from this entry in the current period (R3).
+static func spot_used(state: GameState, supplier_id: String, component_id: String) -> int:
+	return int(state.market["spot_used"].get(spot_key(supplier_id, component_id), 0))
+
+
+static func spot_key(supplier_id: String, component_id: String) -> String:
+	return "%s|%s" % [supplier_id, component_id]
 
 
 ## True on the day whose resolution updates the market (R2): (J + 1) % period == 0.
