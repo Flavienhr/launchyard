@@ -743,3 +743,84 @@ static func market_snapshot(state: GameState, data: GameData) -> Dictionary:
 			"ends_day": MarketRules.shortage_ends_day(state, data, id),
 		}
 	return out
+
+
+# --- Supply contracts (spec 007) ---
+
+## Quote for a supply contract with the arguments of sign_supply_contract (R9):
+## {ok, reason (R4 rejection or ""), discount_pct, unit_price (indexed: at today's
+## spot), invoice (per delivery), storage_units (per delivery), total_commitment
+## (deliveries x invoice), termination_fee (due if terminated right after signing)}.
+## Numeric fields are 0 when the entry cannot be priced (not_in_catalog,
+## contracts_not_offered, bad period). Same checks as SupplyRules.sign (signing
+## debits nothing, so no insufficient_funds).
+static func supply_contract_quote(state: GameState, data: GameData, args: Dictionary) -> Dictionary:
+	var out := {"ok": false, "reason": SupplyRules.sign_rejection(state, data, args), "discount_pct": 0,
+		"unit_price": 0, "invoice": 0, "storage_units": 0, "total_commitment": 0, "termination_fee": 0}
+	out["ok"] = out["reason"] == ""
+	var entry := data.catalog_entry(args.get("supplier_id", ""), args.get("component_id", ""))
+	if entry.is_empty() or entry.get("contract_terms", {}).is_empty():
+		return out
+	var quantity := int(args.get("quantity", 0))
+	var period_days := int(args.get("period_days", 0))
+	if period_days <= 0:
+		return out
+	var component_id: String = args["component_id"]
+	var discount := SupplyRules.discount_pct(data, entry, quantity, period_days)
+	var pct := SupplyRules.price_pct(data, discount, str(args.get("pricing", "")), bool(args.get("priority", false)))
+	var spot := MarketRules.spot_price(state, data, int(entry["unit_price"]), component_id)
+	var unit_price := (spot * pct + SupplyRules.PCT / 2) / SupplyRules.PCT
+	var total := int(args.get("deliveries", 0)) * quantity * unit_price
+	out["discount_pct"] = discount
+	out["unit_price"] = unit_price
+	out["invoice"] = quantity * unit_price
+	out["storage_units"] = quantity * int(data.components[component_id]["storage_units"])
+	out["total_commitment"] = total
+	out["termination_fee"] = total * int(data.supply_contracts.get("termination_fee_pct", 0)) / SupplyRules.PCT
+	return out
+
+
+## Dated deliveries and invoices expected in the next `days` days (R9), sorted by
+## day, then contract id, then order id: [{day (delivery day), invoice_day (day whose
+## resolution debits the invoice, -1 when already paid), kind ("contract" = planned
+## shipment, "transit" = order already on its way), contract_id (-1 if none),
+## order_id (-1 for a planned shipment), supplier_id, component_id, quantity,
+## storage_units, invoice (still to pay: 0 for transit orders and skipped
+## deliveries), skipped}]. Window: delivery day in [day + 1, day + days]. Planned
+## invoices use today's price (indexed) and the full quantity (no shortage reduction).
+static func supply_schedule(state: GameState, data: GameData, days: int) -> Array:
+	var rows: Array = []
+	var last_day := state.day + days
+	for order in state.pending_orders:
+		var arrival := maxi(int(order["arrival_day"]), state.day + 1)
+		if arrival > last_day:
+			continue
+		rows.append({"day": arrival, "invoice_day": -1, "kind": "transit",
+			"contract_id": int(order.get("contract_id", -1)), "order_id": order["id"],
+			"supplier_id": order["supplier_id"], "component_id": order["component_id"],
+			"quantity": order["quantity"],
+			"storage_units": int(order["quantity"]) * int(data.components[order["component_id"]]["storage_units"]),
+			"invoice": 0, "skipped": false, "delay_days": int(order.get("delay_days", 0))})
+	for contract in state.supply_contracts:
+		if contract["status"] != SupplyRules.ACTIVE:
+			continue
+		var price := SupplyRules.current_unit_price(state, data, contract)
+		var units := int(contract["quantity"]) * int(data.components[contract["component_id"]]["storage_units"])
+		for k in int(contract["deliveries"]) - int(contract["deliveries_done"]):
+			var delivery_day := int(contract["next_delivery_day"]) + k * int(contract["period_days"])
+			if delivery_day > last_day:
+				break
+			var skipped: bool = k == 0 and contract["skip_next"]
+			rows.append({"day": delivery_day, "invoice_day": delivery_day - 1, "kind": "contract",
+				"contract_id": contract["id"], "order_id": -1,
+				"supplier_id": contract["supplier_id"], "component_id": contract["component_id"],
+				"quantity": contract["quantity"], "storage_units": units,
+				"invoice": 0 if skipped else int(contract["quantity"]) * price, "skipped": skipped,
+				"delay_days": 0})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["day"] != b["day"]:
+			return a["day"] < b["day"]
+		if a["contract_id"] != b["contract_id"]:
+			return a["contract_id"] < b["contract_id"]
+		return a["order_id"] < b["order_id"])
+	return rows
