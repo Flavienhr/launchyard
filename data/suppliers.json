@@ -6,7 +6,7 @@
       "delay_chance": 0.3,
       "delay_days": 2,
       "catalog": [
-        { "component_id": "steel_sheet", "unit_price": 180, "lead_time_days": 3 }
+        { "component_id": "steel_sheet", "unit_price": 180, "lead_time_days": 3, "spot_capacity_per_period": 40, "contract_terms": { "min_quantity": 8, "max_quantity": 40 } }
       ],
       "_note": "Bon marché mais peu fiable."
     },
@@ -16,7 +16,7 @@
       "delay_chance": 0.05,
       "delay_days": 1,
       "catalog": [
-        { "component_id": "steel_sheet", "unit_price": 260, "lead_time_days": 1 }
+        { "component_id": "steel_sheet", "unit_price": 260, "lead_time_days": 1, "spot_capacity_per_period": 20 }
       ],
       "_note": "Cher, rapide et fiable : premier dilemme acheter vite ou acheter moins cher."
     },
@@ -26,7 +26,7 @@
       "delay_chance": 0.2,
       "delay_days": 4,
       "catalog": [
-        { "component_id": "engine", "unit_price": 12000, "lead_time_days": 10 }
+        { "component_id": "engine", "unit_price": 12000, "lead_time_days": 10, "spot_capacity_per_period": 8, "contract_terms": { "min_quantity": 4, "max_quantity": 16 } }
       ],
       "_note": "Unique fournisseur de moteurs : dépendance volontaire, composant critique en délai (spec 001)."
     },
@@ -36,7 +36,7 @@
       "delay_chance": 0.15,
       "delay_days": 3,
       "catalog": [
-        { "component_id": "tank", "unit_price": 9000, "lead_time_days": 6 }
+        { "component_id": "tank", "unit_price": 9000, "lead_time_days": 6, "spot_capacity_per_period": 4, "contract_terms": { "min_quantity": 2, "max_quantity": 8 } }
       ]
     },
     {
@@ -45,7 +45,7 @@
       "delay_chance": 0.05,
       "delay_days": 1,
       "catalog": [
-        { "component_id": "avionics", "unit_price": 6000, "lead_time_days": 5 }
+        { "component_id": "avionics", "unit_price": 6000, "lead_time_days": 5, "spot_capacity_per_period": 6, "contract_terms": { "min_quantity": 2, "max_quantity": 8 } }
       ]
     },
     {
@@ -54,7 +54,7 @@
       "delay_chance": 0.1,
       "delay_days": 2,
       "catalog": [
-        { "component_id": "fairing", "unit_price": 5000, "lead_time_days": 7 }
+        { "component_id": "fairing", "unit_price": 5000, "lead_time_days": 7, "spot_capacity_per_period": 3, "contract_terms": { "min_quantity": 1, "max_quantity": 4 } }
       ]
     },
     {
@@ -63,7 +63,7 @@
       "delay_chance": 0.05,
       "delay_days": 1,
       "catalog": [
-        { "component_id": "alloy_billet", "unit_price": 550, "lead_time_days": 3 }
+        { "component_id": "alloy_billet", "unit_price": 550, "lead_time_days": 3, "spot_capacity_per_period": 30, "contract_terms": { "min_quantity": 8, "max_quantity": 40 } }
       ],
       "_note": "Spec 006 : lingots, rapide et cher, fiable."
     },
@@ -73,7 +73,7 @@
       "delay_chance": 0.25,
       "delay_days": 3,
       "catalog": [
-        { "component_id": "alloy_billet", "unit_price": 430, "lead_time_days": 7 }
+        { "component_id": "alloy_billet", "unit_price": 430, "lead_time_days": 7, "spot_capacity_per_period": 20, "contract_terms": { "min_quantity": 8, "max_quantity": 40 } }
       ],
       "_note": "Spec 006 : lingots, lent et peu fiable, moins cher."
     },
@@ -83,7 +83,7 @@
       "delay_chance": 0.1,
       "delay_days": 2,
       "catalog": [
-        { "component_id": "electronic_kit", "unit_price": 500, "lead_time_days": 4 }
+        { "component_id": "electronic_kit", "unit_price": 500, "lead_time_days": 4, "spot_capacity_per_period": 30, "contract_terms": { "min_quantity": 6, "max_quantity": 30 } }
       ],
       "_note": "Spec 006 : composants électroniques."
     },
@@ -93,7 +93,7 @@
       "delay_chance": 0.1,
       "delay_days": 2,
       "catalog": [
-        { "component_id": "composite_roll", "unit_price": 350, "lead_time_days": 5 }
+        { "component_id": "composite_roll", "unit_price": 350, "lead_time_days": 5, "spot_capacity_per_period": 20, "contract_terms": { "min_quantity": 3, "max_quantity": 15 } }
       ],
       "_note": "Spec 006 : fibre composite préimprégnée."
     }

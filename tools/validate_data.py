@@ -241,6 +241,47 @@ def check_references(docs: dict, errors: list[str]) -> None:
                 f"et n'est produit par aucune recette")
 
 
+def check_market(docs: dict, errors: list[str]) -> None:
+    """Marché et contrats d'approvisionnement (spec 007, Données et Schémas)."""
+    components = ids(docs, "components", errors)
+    market = docs.get("market", {})
+    if market:
+        if not market["index_min"] <= market["index_base"] <= market["index_max"]:
+            errors.append("market.json: index_min <= index_base <= index_max non respecté")
+        if market["shortage_min_periods"] > market["shortage_max_periods"]:
+            errors.append("market.json: shortage_min_periods > shortage_max_periods")
+        seen: set[str] = set()
+        sold = {e.get("component_id")
+                for s in docs.get("suppliers", {}).get("suppliers", [])
+                for e in s.get("catalog", [])}
+        for entry in market.get("components", []):
+            cid = entry.get("id")
+            if cid in seen:
+                errors.append(f"market.json: composant dupliqué '{cid}'")
+            seen.add(cid)
+            if cid not in components:
+                errors.append(f"market.json: composant inconnu '{cid}'")
+            if cid not in sold:
+                errors.append(f"market.json: '{cid}' n'est vendu par aucun fournisseur")
+
+    for supplier in docs.get("suppliers", {}).get("suppliers", []):
+        for entry in supplier.get("catalog", []):
+            terms = entry.get("contract_terms")
+            if terms and terms["min_quantity"] > terms["max_quantity"]:
+                errors.append(
+                    f"suppliers.json: {supplier.get('id')} / {entry.get('component_id')} : "
+                    f"contract_terms min_quantity > max_quantity")
+
+    supply = docs.get("supply_contracts", {})
+    if supply:
+        if supply["min_deliveries"] > supply["max_deliveries"]:
+            errors.append("supply_contracts.json: min_deliveries > max_deliveries")
+        tiers = supply.get("volume_discount_tiers", [])
+        values = [t["min_value"] for t in tiers]
+        if values != sorted(set(values)):
+            errors.append("supply_contracts.json: volume_discount_tiers non triés par min_value croissant")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true", help="liste les fichiers validés")
@@ -249,6 +290,7 @@ def main() -> int:
     errors: list[str] = []
     docs = check_schemas(errors)
     check_references(docs, errors)
+    check_market(docs, errors)
 
     if args.verbose:
         for name in docs:

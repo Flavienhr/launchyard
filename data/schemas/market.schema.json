@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "market_period_days",
+    "index_base",
+    "index_min",
+    "index_max",
+    "reversion_pct",
+    "shortage_price_bonus_permille",
+    "shortage_extra_lead_days",
+    "shortage_capacity_pct",
+    "shortage_min_periods",
+    "shortage_max_periods",
+    "components"
+  ],
+  "properties": {
+    "market_period_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "index_base": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "index_min": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "index_max": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reversion_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "shortage_price_bonus_permille": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "shortage_extra_lead_days": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "shortage_capacity_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "shortage_min_periods": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "shortage_max_periods": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "volatility_permille",
+          "shortage_chance"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "volatility_permille": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "shortage_chance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "patternProperties": {
+          "^_": {}
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}
