@@ -1,5 +1,5 @@
 # 007 — Marché et contrats d'approvisionnement
-Statut : brouillon
+Statut : validée (2026-11-14)
 
 ## Intention joueur
 Aujourd'hui, un fournisseur est un prix fixe, un délai et une probabilité de retard. Une fois qu'on sait quoi commander, il n'y a plus rien à décider. Cette spec ajoute deux couches :
@@ -253,7 +253,8 @@ Comportement attendu (240 jours, 40 seeds) :
 - Indexation des paiements des contrats de lancement.
 - Le navigateur web dans le jeu (GDD, Idées en attente) : une autre présentation des mêmes commandes.
 
-## Questions pour Flavien
+## Décisions (validées par Flavien le 2026-11-14)
+Toutes les recommandations ci-dessous sont retenues.
 1. **Termes des contrats choisis par le joueur (formulaire), ou offres générées par les fournisseurs, comme le tableau des contrats de lancement ?** Le formulaire donne plus de prise et ne demande aucun tirage. Les offres sont plus « vivantes », mais ajoutent un flux RNG et du contenu. *Recommandation : formulaire maintenant. Des offres spéciales ponctuelles (« Brannoc propose −10 % sur 6 mois ») pourront venir plus tard comme événement.*
 2. **Facturation à la date prévue ou à la réception ?** À la date prévue, c'est du take-or-pay pur : plus dur, plus lisible dans l'échéancier. À la réception, un retard du fournisseur soulage la trésorerie, ce qui brouille la pénalité. *Recommandation : à la date prévue.*
 3. **Frais de garde aussi pour les commandes au comptant bloquées par l'entrepôt plein ?** C'est plus cohérent, mais cela modifie l'équilibrage de la phase 2. *Recommandation : contrats seulement pour l'instant, puis étendre au comptant si le bot montre que les joueurs « stockent chez le fournisseur » gratuitement.*

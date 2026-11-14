@@ -1,5 +1,5 @@
 # 006 — Intégration verticale : fabriquer moteurs, avionique et coiffe
-Statut : brouillon
+Statut : validée (2026-11-14)
 
 ## Intention joueur
 Retour du playtest : « la boucle tient 40 tours, après c'est bof ». Selon le bot, une fois le kit L1 maîtrisé, plus aucune décision ne compte. L'atelier de soudure rapporte environ 130 000 sur 240 jours, et le délai moteur (10 jours, un seul fournisseur) reste le facteur limitant.
@@ -209,7 +209,8 @@ Comportement attendu (à 240 jours, 40 seeds, et en plus à 360 jours si la ques
 - Revente d'installations ou de stock.
 - Recyclage des rebuts.
 
-## Questions pour Flavien
+## Décisions (validées par Flavien le 2026-11-14)
+Toutes les recommandations ci-dessous sont retenues.
 1. **Rebut visible en sortie d'atelier, ou défaut caché qui dégrade la fiabilité du tir ?** Le défaut caché est plus réaliste et plus dramatique, mais il est invisible pour le joueur sans banc d'essai, et il touche la spec 003. *Recommandation : rebut visible maintenant. Le défaut caché viendra avec le banc d'essai (une spec dédiée) : on transformera alors une partie du rebut en « défaut non détecté sans test ».*
 2. **Prérequis : atelier seulement, ou aussi un nombre de succès de tir (« certification ») ?** Exemple : l'atelier moteurs exige 2 lancements réussis. Cela étale encore la progression, mais c'est un verrou arbitraire. *Recommandation : atelier seulement. Prévoir un champ `requires_successful_launches` (défaut 0) seulement si le bot montre que `integrate_greedy` construit l'atelier moteurs trop tôt.*
 3. **`max_count` des nouveaux ateliers.** Un seul atelier moteurs plafonne la cadence à environ 1 lanceur par 12 jours. *Recommandation : 1 pour l'instant. Un second atelier moteurs, ou une amélioration, est le prochain palier de progression naturel (spec suivante).*
