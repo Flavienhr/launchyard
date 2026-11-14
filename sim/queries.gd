@@ -718,6 +718,15 @@ static func spot_price(state: GameState, data: GameData, supplier_id: String, co
 	return MarketRules.spot_price(state, data, int(entry["unit_price"]), component_id)
 
 
+## Delivery delay of a spot order today, shortage included (spec 007 R3).
+## -1 if not in the catalog.
+static func spot_lead_days(state: GameState, data: GameData, supplier_id: String, component_id: String) -> int:
+	var entry := data.catalog_entry(supplier_id, component_id)
+	if entry.is_empty():
+		return -1
+	return MarketRules.spot_lead_days(state, data, int(entry["lead_time_days"]), component_id)
+
+
 ## Spot units still buyable from a catalog entry this period (spec 007 R3).
 ## -1 = unlimited (MarketRules.UNLIMITED); 0 if not in the catalog.
 static func spot_capacity_remaining(state: GameState, data: GameData, supplier_id: String, component_id: String) -> int:
@@ -823,4 +832,76 @@ static func supply_schedule(state: GameState, data: GameData, days: int) -> Arra
 		if a["contract_id"] != b["contract_id"]:
 			return a["contract_id"] < b["contract_id"]
 		return a["order_id"] < b["order_id"])
+	return rows
+
+
+## First day on which the next market update is visible (R2), or -1 when the
+## market is inactive. The update is resolved at the end of the day before.
+static func market_next_update_day(state: GameState, data: GameData) -> int:
+	if not MarketRules.is_active(data):
+		return -1
+	var period := int(data.market["market_period_days"])
+	return state.day + (period - (state.day + 1) % period) % period + 1
+
+
+## Active supply contracts by ascending id, with what the UI shows before a click:
+## the contract fields plus {unit_price (today), remaining (deliveries left, a
+## skipped one excluded), skip_cost, termination_fee, can_skip, skip_reason
+## ("already_skipped" | "notice_too_short" | "")}.
+static func supply_contract_infos(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for contract in state.supply_contracts:
+		if contract["status"] != SupplyRules.ACTIVE:
+			continue
+		var info: Dictionary = contract.duplicate()
+		info["unit_price"] = SupplyRules.current_unit_price(state, data, contract)
+		info["remaining"] = SupplyRules.remaining_deliveries(contract)
+		info["skip_cost"] = SupplyRules.skip_cost(state, data, contract)
+		info["termination_fee"] = SupplyRules.termination_fee(state, data, contract)
+		var reason := ""
+		if contract["skip_next"]:
+			reason = "already_skipped"
+		elif int(contract["next_delivery_day"]) - state.day < int(SupplyRules.params(data)["skip_notice_days"]):
+			reason = "notice_too_short"
+		info["skip_reason"] = reason
+		info["can_skip"] = reason == ""
+		out.append(info)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["id"] < b["id"])
+	return out
+
+
+## Known fixed costs per day: upkeep of the ready facilities + salaries.
+static func known_daily_costs(state: GameState, data: GameData) -> int:
+	var total := 0
+	for facility in state.facilities:
+		if facility["status"] == "ready":
+			total += int(data.facilities[facility["type"]]["upkeep_per_day"])
+	if state.technicians_hired > 0:
+		total += state.technicians_hired * int(data.staff["technician"]["technician_salary_per_day"])
+	return total
+
+
+## Projected cash for each of the next `days` days (R9), counting only what is
+## known: the fixed costs and the planned contract invoices of supply_schedule.
+## One row per day D in [day + 1, day + days]: {day, balance (cash at the start
+## of D: after the resolution of D - 1, which debits the invoices of the
+## deliveries of D), fixed_costs (per day), invoices (due for the deliveries
+## of D), entries (supply_schedule rows whose delivery day is D)}.
+static func cash_projection(state: GameState, data: GameData, days: int) -> Array:
+	var schedule := supply_schedule(state, data, days)
+	var fixed := known_daily_costs(state, data)
+	var rows: Array = []
+	var balance := state.money
+	for offset in range(1, days + 1):
+		var day := state.day + offset
+		var invoices := 0
+		var entries: Array = []
+		for row in schedule:
+			if row["day"] == day:
+				entries.append(row)
+				if row["kind"] == "contract":
+					invoices += int(row["invoice"])
+		balance -= fixed + invoices
+		rows.append({"day": day, "balance": balance, "fixed_costs": fixed,
+			"invoices": invoices, "entries": entries})
 	return rows
