@@ -15,6 +15,7 @@ const REJECT_REASONS := {
 	"unknown_command": "commande inconnue",
 	"not_buildable": "non constructible",
 	"max_count_reached": "nombre maximum atteint",
+	"missing_prerequisite": "installation prérequise manquante",
 	"max_technicians": "maximum de techniciens atteint",
 	"staff_assigned": "techniciens encore affectés",
 	"unknown_facility": "installation inconnue",
@@ -51,6 +52,9 @@ const BLOCK_REASONS := {
 }
 
 var session: GameSession
+
+# Jobs scrapped per recipe since the game started (UI tally of job_scrapped events, display only).
+var _scrapped: Dictionary = {}
 
 # Launch form selection (UI state only). -1 = not chosen yet, first valid option is used.
 var _sel_launcher := -1
@@ -96,6 +100,7 @@ func _new_game() -> void:
 	_sel_pad = -1
 	_sel_contract = -1
 	_sel_day = -1
+	_scrapped.clear()
 	_log.clear()
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
 	_refresh()
@@ -210,6 +215,13 @@ func _facility_name(facility_id: int) -> String:
 	return "#%d" % facility_id
 
 
+func _facility_type_names(types: Array) -> Array:
+	var names: Array = []
+	for type in types:
+		names.append(session.data.facilities[type]["name"] if session.data.facilities.has(type) else String(type))
+	return names
+
+
 func _recipe_name(recipe_id: String) -> String:
 	var output: Dictionary = session.data.recipes[recipe_id]["output"]
 	if output.has("component_id"):
@@ -298,6 +310,22 @@ func _build_jobs(card: VBoxContainer, info: Dictionary) -> void:
 	for recipe_id in info["recipes"]:
 		_button(add_row, "+ " + _recipe_name(recipe_id),
 			func() -> void: _send(Command.queue_job(info["id"], recipe_id, 1)))
+	for recipe_id in info["recipes"]:
+		var scrap := SimQueries.scrap_info(session.state, session.data, recipe_id)
+		if not scrap["has_scrap"]:
+			continue
+		var out: Dictionary = session.data.recipes[recipe_id]["output"]
+		var text := tr("Rebut %s : %d %% → %d %%") % [
+			_component_name(out["component_id"]) if out.has("component_id") else recipe_id, roundi(scrap["start"] * 100), roundi(scrap["current"] * 100)]
+		if scrap["attempts_to_floor"] > 0:
+			text += tr(" (plancher %d %%, atteint dans %d pièce(s))") % [
+				roundi(scrap["floor"] * 100), scrap["attempts_to_floor"]]
+		else:
+			text += tr(" (plancher atteint)")
+		var lost := int(_scrapped.get(recipe_id, 0))
+		if lost > 0:
+			text += tr(" · %d raté(s)") % lost
+		_label(card, text, &"WarnLabel" if lost > 0 else &"DimLabel")
 
 
 func _build_hall(card: VBoxContainer, facility: Dictionary) -> void:
@@ -314,10 +342,25 @@ func _build_construction(box: VBoxContainer) -> void:
 	_label(card, tr("CONSTRUIRE"), &"HeadingLabel")
 	for option in SimQueries.build_options(session.state, session.data):
 		var row := _row(card)
-		_label(row, tr("%s : %s cr · %d j · entretien %s cr/j · %d restant(s)") % [
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(info)
+		_label(info, tr("%s : %s cr · %d j · entretien %s cr/j · %d restant(s)") % [
 			option["name"], _fmt(option["cost"]), option["days"], _fmt(option["upkeep"]), option["remaining"]])
-		_button(row, tr("Construire"), func() -> void: _send(Command.build(option["type"])),
-			option["remaining"] <= 0)
+		var blocked_by: Array = []
+		for req in option["requires"]:
+			var state_text := tr("prêt") if req["ready"] else tr("manquant")
+			blocked_by.append("%s (%s)" % [req["name"], state_text])
+		if not blocked_by.is_empty():
+			_label(info, tr("Nécessite : %s") % ", ".join(blocked_by),
+				&"WarnLabel" if not option["missing"].is_empty() else &"DimLabel")
+		var button := _button(row, tr("Construire"), func() -> void: _send(Command.build(option["type"])),
+			option["remaining"] <= 0 or not option["missing"].is_empty())
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		if option["remaining"] <= 0:
+			button.tooltip_text = tr("Nombre maximum atteint.")
+		elif not option["missing"].is_empty():
+			button.tooltip_text = tr("Construisez d'abord : %s") % ", ".join(_facility_type_names(option["missing"]))
 
 	var staff := SimQueries.staff_info(session.state, session.data)
 	var staff_card := _card(box)
@@ -399,19 +442,43 @@ func _grid_label(grid: Container, text: String, variation := &"", expand := fals
 
 
 func _build_compare(card: VBoxContainer, cmp: Dictionary) -> void:
-	_label(card, _component_name(cmp["component_id"]))
-	var buy: Dictionary = cmp["buy"]
-	if buy.is_empty():
-		_label(card, tr("  Acheter : aucun fournisseur"), &"DimLabel")
-	else:
-		_label(card, tr("  Acheter : %s cr/u · %d j (%s)") % [
-			_fmt(buy["unit_price"]), buy["lead_time_days"], buy["supplier_name"]])
 	var make: Dictionary = cmp["make"]
-	var cost := tr("matière %s cr") % _fmt(make["material_cost"]) if make["material_cost"] >= 0 else tr("matière indisponible")
-	var duration := tr("%d j") % make["days"] if make["days"] > 0 else tr("à l'arrêt")
-	if not make["ready"]:
-		duration = tr("installation non construite")
-	_label(card, tr("  Fabriquer : %s · %s") % [cost, duration])
+	var buy: Dictionary = cmp["buy"]
+	_label(card, _component_name(cmp["component_id"]))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 4)
+	card.add_child(grid)
+	_grid_label(grid, tr("  Acheter"), &"DimLabel")
+	if buy.is_empty():
+		_grid_label(grid, tr("non achetable"), &"DimLabel", true)
+	else:
+		_grid_label(grid, tr("%s cr/u · %d j (%s)") % [
+			_fmt(buy["unit_price"]), buy["lead_time_days"], buy["supplier_name"]], &"", true)
+	_grid_label(grid, tr("  Fabriquer"), &"DimLabel")
+	var effective: int = make["effective_cost"]
+	var cost := tr("coût effectif %s cr/u (matière %s cr)") % [_fmt(effective), _fmt(make["material_cost"])] \
+		if effective >= 0 else tr("matière indisponible")
+	var variation := &""
+	if effective >= 0 and not buy.is_empty():
+		variation = &"OkLabel" if effective < int(buy["unit_price"]) else &"WarnLabel"
+	_grid_label(grid, cost, variation, true)
+	_grid_label(grid, tr("  Durée"), &"DimLabel")
+	_grid_label(grid, tr("%d j par pièce") % make["days"] if make["days"] > 0 else tr("à l'arrêt"), &"", true)
+	var scrapped: Array = []
+	for step in make["steps"]:
+		if step["scrap_rate"] > 0.0:
+			scrapped.append("%s %d %%" % [_recipe_name(step["recipe_id"]), roundi(step["scrap_rate"] * 100)])
+	if not scrapped.is_empty():
+		_grid_label(grid, tr("  Rebut"), &"DimLabel")
+		_grid_label(grid, ", ".join(scrapped), &"DimLabel", true)
+	for missing in make["missing_facilities"]:
+		_grid_label(grid, tr("  Manque"), &"DimLabel")
+		var text: String = missing["name"]
+		if not missing["requires_missing"].is_empty():
+			text += tr(" (nécessite : %s)") % ", ".join(missing["requires_missing"])
+		_grid_label(grid, text, &"DangerLabel", true)
 
 
 # --- Suppliers & stock tab --------------------------------------------------
@@ -862,7 +929,10 @@ func _log_event(e: Dictionary) -> void:
 			_log_line(tr("Commande #%d passée : -%s cr, arrivée jour %d") % [
 				e["order_id"], _fmt(e["cost"]), e["arrival_day"]], COLOR_ACCENT)
 		"command_rejected":
-			_log_line(tr("Commande refusée : %s") % tr(REJECT_REASONS.get(e["reason"], e["reason"])), COLOR_WARN)
+			var why := tr(REJECT_REASONS.get(e["reason"], e["reason"]))
+			if e["reason"] == "missing_prerequisite":
+				why = tr("il faut d'abord construire : %s") % ", ".join(_facility_type_names(e.get("missing", [])))
+			_log_line(tr("Commande refusée : %s") % why, COLOR_WARN)
 		"delivery_delayed":
 			_log_line(tr("Commande #%d retardée de %d j par %s") % [
 				e["order_id"], e["delay_days"], data.suppliers[e["supplier_id"]]["name"]], COLOR_WARN)
@@ -934,6 +1004,10 @@ func _log_event(e: Dictionary) -> void:
 				e["job_id"], tr(BLOCK_REASONS.get(e["reason"], e["reason"])), detail], COLOR_WARN)
 		"output_blocked":
 			_log_line(tr("Job #%d : sortie bloquée, entrepôt plein") % e["job_id"], COLOR_WARN)
+		"job_scrapped":
+			_scrapped[e["recipe_id"]] = int(_scrapped.get(e["recipe_id"], 0)) + 1
+			_log_line(tr("Job #%d RATÉ : %s mis au rebut (taux %d %%), composants perdus") % [
+				e["job_id"], _recipe_name(e["recipe_id"]), roundi(float(e["scrap_rate"]) * 100)], COLOR_DANGER)
 		"job_completed":
 			_log_line(tr("Job #%d terminé") % e["job_id"], COLOR_OK)
 		"launcher_assembled":
