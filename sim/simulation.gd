@@ -22,6 +22,7 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 			if facility["type"] == type:  # first instance of that type
 				facility["assigned"] = int(assignments[type])
 				break
+	state.market = MarketRules.initial_state(data)
 	state.reputation = int(data.contracts.get("reputation_start", 0))
 	var rng := SimRng.for_stream(state, SimRng.CONTRACTS)  # day 0
 	for i in int(data.contracts.get("initial_offers", 0)):
@@ -483,6 +484,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	var launch_costs := {"scrub_costs": 0, "refurb_costs": 0}  # paid at step 8
 	events.append_array(_resolve_launches(state, data, launch_costs))
 	events.append_array(_resolve_market(state, data))
+	events.append_array(_resolve_price_market(state, data))
 	events.append_array(_resolve_contract_deadlines(state, data))
 	events.append_array(_resolve_finances(state, data, launch_costs))
 	events.append_array(_resolve_bankruptcy(state, data))
@@ -668,6 +670,14 @@ static func _resolve_market(state: GameState, data: GameData) -> Array:
 				"payment": offer["payment"], "deadline_day": offer["deadline_day"],
 			}))
 	return events
+
+
+## Step 7 (spec 007 R2): weekly price index update and shortages.
+## Resolved as of tomorrow: the new prices are visible from day J+1.
+static func _resolve_price_market(state: GameState, data: GameData) -> Array:
+	if not MarketRules.is_update_day(state, data):
+		return []
+	return MarketRules.update(state, data, _event)
 
 
 static func _add_offer(state: GameState, rng: RandomNumberGenerator, data: GameData, day: int) -> Dictionary:
