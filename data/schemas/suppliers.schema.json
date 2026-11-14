@@ -59,6 +59,31 @@
                 "lead_time_days": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "spot_capacity_per_period": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "contract_terms": {
+                  "type": "object",
+                  "required": [
+                    "min_quantity",
+                    "max_quantity"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "min_quantity": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max_quantity": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "patternProperties": {
+                    "^_": {}
+                  }
                 }
               },
               "patternProperties": {

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "period_options_days",
+    "min_deliveries",
+    "max_deliveries",
+    "volume_discount_tiers",
+    "fixed_premium_pct",
+    "priority_premium_pct",
+    "late_penalty_pct_per_day",
+    "late_penalty_cap_pct",
+    "holding_fee_per_unit_per_day",
+    "shortage_fill_pct",
+    "take_or_pay_pct",
+    "skip_notice_days",
+    "termination_fee_pct",
+    "max_supply_contracts"
+  ],
+  "properties": {
+    "period_options_days": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "min_deliveries": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_deliveries": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "volume_discount_tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "min_value",
+          "pct"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "min_value": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "patternProperties": {
+          "^_": {}
+        }
+      }
+    },
+    "fixed_premium_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "priority_premium_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "late_penalty_pct_per_day": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "late_penalty_cap_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "holding_fee_per_unit_per_day": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "shortage_fill_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "take_or_pay_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "skip_notice_days": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "termination_fee_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "max_supply_contracts": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "patternProperties": {
+    "^_": {}
+  }
+}

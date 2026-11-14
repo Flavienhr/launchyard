@@ -1,0 +1,23 @@
+{
+  "_note": "Spec 007, R1-R2 : marché exogène, indice par composant en pour mille. Tout composant absent de ce fichier a un indice fixe de 1000.",
+  "market_period_days": 7,
+  "index_base": 1000,
+  "index_min": 700,
+  "index_max": 1800,
+  "reversion_pct": 20,
+  "shortage_price_bonus_permille": 350,
+  "shortage_extra_lead_days": 5,
+  "shortage_capacity_pct": 30,
+  "shortage_min_periods": 2,
+  "shortage_max_periods": 5,
+  "components": [
+    { "id": "steel_sheet", "volatility_permille": 60, "shortage_chance": 0.03 },
+    { "id": "alloy_billet", "volatility_permille": 80, "shortage_chance": 0.04, "_note": "Spec 006." },
+    { "id": "electronic_kit", "volatility_permille": 100, "shortage_chance": 0.04, "_note": "Spec 006." },
+    { "id": "composite_roll", "volatility_permille": 50, "shortage_chance": 0.03, "_note": "Spec 006." },
+    { "id": "engine", "volatility_permille": 30, "shortage_chance": 0.05 },
+    { "id": "tank", "volatility_permille": 30, "shortage_chance": 0.03 },
+    { "id": "avionics", "volatility_permille": 40, "shortage_chance": 0.04 },
+    { "id": "fairing", "volatility_permille": 30, "shortage_chance": 0.04 }
+  ]
+}
