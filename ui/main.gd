@@ -38,6 +38,16 @@ const REJECT_REASONS := {
 	"too_early": "trop tôt pour ce pas",
 	"after_deadline": "après la date limite du contrat",
 	"unknown_launch": "tir inconnu",
+	"supplier_capacity": "capacité du fournisseur dépassée cette semaine",
+	"contracts_not_offered": "ce fournisseur ne propose pas de contrat",
+	"invalid_period": "période invalide",
+	"invalid_duration": "nombre de livraisons invalide",
+	"invalid_pricing": "mode de prix invalide",
+	"duplicate_contract": "un contrat actif existe déjà pour ce produit",
+	"too_many_supply_contracts": "trop de contrats d'approvisionnement actifs",
+	"unknown_contract": "contrat inconnu",
+	"already_skipped": "prochaine livraison déjà sautée",
+	"notice_too_short": "préavis trop court pour sauter cette livraison",
 }
 
 const FAIL_REASONS := {
@@ -63,6 +73,16 @@ var _sel_contract := -1
 var _sel_day := -1
 var _sel_insured := false
 
+# Supply contract form (UI state only; the quote comes from SimQueries).
+var _sf_entry := 0
+var _sf_quantity := -1
+var _sf_period_index := 0
+var _sf_deliveries := -1
+var _sf_indexed := false
+var _sf_priority := false
+
+const SCHEDULE_DAYS := 30
+
 @onready var _day_label: Label = %DayLabel
 @onready var _money_label: Label = %MoneyLabel
 @onready var _rep_bar: ProgressBar = %RepBar
@@ -73,6 +93,7 @@ var _sel_insured := false
 @onready var _build_box: VBoxContainer = %BuildBox
 @onready var _bom_box: VBoxContainer = %BomBox
 @onready var _supply_box: VBoxContainer = %CatalogBox
+@onready var _contract_supply_box: VBoxContainer = %SupplyBox
 @onready var _launch_box: VBoxContainer = %LaunchBox
 @onready var _banner: PanelContainer = %Banner
 @onready var _banner_label: Label = %BannerLabel
@@ -86,7 +107,7 @@ func _ready() -> void:
 	%FastForwardButton.pressed.connect(_on_fast_forward)
 	%NewGameButton.pressed.connect(_new_game)
 	var titles := [tr("Installations"), tr("Construction"), tr("Nomenclature"),
-		tr("Fournisseurs"), tr("Contrats"), tr("Lancement")]
+		tr("Fournisseurs"), tr("Appro."), tr("Contrats"), tr("Lancement")]
 	for i in titles.size():
 		_tabs.set_tab_title(i, titles[i])
 	_new_game()
@@ -129,6 +150,7 @@ func _refresh() -> void:
 	_rebuild(_build_box, _build_construction)
 	_rebuild(_bom_box, _build_bom)
 	_rebuild(_supply_box, _build_supply)
+	_rebuild(_contract_supply_box, _build_supply_contracts)
 	_rebuild(_launch_box, _build_launch)
 	_refresh_bankruptcy()
 
@@ -441,6 +463,17 @@ func _grid_label(grid: Container, text: String, variation := &"", expand := fals
 	return label
 
 
+## Label clipped to a fixed minimum width (long names must not widen the grid);
+## the full text stays in the tooltip.
+func _clipped_label(grid: Container, text: String, width: int) -> Label:
+	var label := _grid_label(grid, text, &"", true)
+	label.clip_text = true
+	label.custom_minimum_size.x = width
+	label.tooltip_text = text
+	label.mouse_filter = Control.MOUSE_FILTER_STOP
+	return label
+
+
 func _build_compare(card: VBoxContainer, cmp: Dictionary) -> void:
 	var make: Dictionary = cmp["make"]
 	var buy: Dictionary = cmp["buy"]
@@ -505,29 +538,73 @@ func _build_supply(box: VBoxContainer) -> void:
 			order["id"], order["quantity"], _component_name(order["component_id"]), order["arrival_day"]])
 	_label(transit_card, "\n".join(pending) if pending else tr("(aucune)"))
 
+	_build_market_card(box)
+
 	var catalog_card := _card(box)
-	_label(catalog_card, tr("FOURNISSEURS"), &"HeadingLabel")
+	_label(catalog_card, tr("FOURNISSEURS (prix au comptant)"), &"HeadingLabel")
 	var grid := GridContainer.new()
-	grid.columns = 5
+	grid.columns = 6
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 6)
 	catalog_card.add_child(grid)
-	for title in [tr("Fournisseur"), tr("Composant"), tr("Prix (cr) · délai"), tr("Quantité"), ""]:
+	for title in [tr("Fournisseur"), tr("Composant"), tr("Prix · délai"), tr("Capacité"), tr("Quantité"), ""]:
 		_grid_label(grid, title, &"DimLabel", title == tr("Fournisseur"))
 	for supplier_id in data.suppliers:
 		var supplier: Dictionary = data.suppliers[supplier_id]
 		for entry in supplier["catalog"]:
 			var component_id: String = entry["component_id"]
-			var name_label := _grid_label(grid, supplier["name"], &"", true)
-			name_label.tooltip_text = tr("%d %% de retards") % roundi(supplier["delay_chance"] * 100)
-			name_label.mouse_filter = Control.MOUSE_FILTER_STOP
-			_grid_label(grid, _component_name(component_id))
-			_grid_label(grid, tr("%s/u · %d j") % [_fmt(entry["unit_price"]), entry["lead_time_days"]])
+			var name_label := _clipped_label(grid, supplier["name"], 100)
+			name_label.tooltip_text = tr("%s · %d %% de retards") % [supplier["name"], roundi(supplier["delay_chance"] * 100)]
+			_clipped_label(grid, _component_name(component_id), 140)
+			var spot := SimQueries.spot_price(state, data, supplier_id, component_id)
+			var lead := SimQueries.spot_lead_days(state, data, supplier_id, component_id)
+			var price_label := _grid_label(grid, tr("%s/u · %d j") % [_fmt(spot), lead],
+				&"WarnLabel" if spot > int(entry["unit_price"]) else &"")
+			price_label.tooltip_text = tr("Prix catalogue : %s cr/u · délai de base %d j") % [
+				_fmt(entry["unit_price"]), entry["lead_time_days"]]
+			price_label.mouse_filter = Control.MOUSE_FILTER_STOP
+			var cap_label := _grid_label(grid, "", &"DimLabel")
 			var spin := _quantity_spin(grid, 1)
 			var button := Button.new()
 			button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			grid.add_child(button)
-			_bind_order(button, spin, null, supplier_id, component_id)
+			_bind_order(button, spin, null, supplier_id, component_id, true, cap_label)
+
+
+## One row per market component: index, change since the previous period, shortage.
+func _build_market_card(box: VBoxContainer) -> void:
+	var card := _card(box)
+	_label(card, tr("MARCHÉ"), &"HeadingLabel")
+	var snapshot := SimQueries.market_snapshot(session.state, session.data)
+	if snapshot.is_empty():
+		_label(card, tr("(marché inactif)"), &"DimLabel")
+		return
+	var next_day := SimQueries.market_next_update_day(session.state, session.data)
+	_label(card, tr("Prochaine mise à jour au jour %d") % next_day, &"DimLabel")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 4)
+	card.add_child(grid)
+	for title in [tr("Composant"), tr("Indice"), tr("Variation"), tr("Pénurie")]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Composant"))
+	var ids: Array = snapshot.keys()
+	ids.sort()
+	for id in ids:
+		var row: Dictionary = snapshot[id]
+		_clipped_label(grid, _component_name(id), 150)
+		_grid_label(grid, "%.1f %%" % (row["index"] / 10.0))
+		var change: int = row["change"]
+		if change > 0:
+			_grid_label(grid, "▲ +%.1f %%" % (change / 10.0), &"WarnLabel")
+		elif change < 0:
+			_grid_label(grid, "▼ %.1f %%" % (change / 10.0), &"OkLabel")
+		else:
+			_grid_label(grid, "= 0.0 %", &"DimLabel")
+		if row["shortage"]:
+			_grid_label(grid, tr("PÉNURIE → jour %d") % row["ends_day"], &"DangerLabel")
+		else:
+			_grid_label(grid, "—", &"DimLabel")
 
 
 ## SpinBox (min 1, step 1) with a fixed width so grid columns stay aligned.
@@ -556,24 +633,33 @@ func _order_controls(parent: Control, supplier_id: String, component_id: String,
 ## Keeps the button label (total cost), its enabled state, tooltip and the
 ## warehouse-room label in sync with the spinner. All numbers come from SimQueries.
 func _bind_order(button: Button, spin: SpinBox, room: Label, supplier_id: String, component_id: String,
-		show_cost := true) -> void:
+		show_cost := true, cap_label: Label = null) -> void:
 	var refresh := func(_v := 0.0) -> void:
 		var quote := SimQueries.order_quote(session.state, session.data, supplier_id, component_id, int(spin.value))
+		var capacity: int = quote["spot_capacity_remaining"]
+		var over: bool = not quote["within_capacity"]
 		button.text = tr("Commander (%s)") % _fmt(quote["total_cost"]) if show_cost else tr("Commander")
-		button.disabled = not quote["affordable"]
+		if over:
+			button.text = tr("Capacité dépassée")
+		button.disabled = not quote["affordable"] or over
 		var tips: PackedStringArray = []
+		if over:
+			tips.append(tr("Capacité du fournisseur dépassée : %d unité(s) restantes cette semaine, la capacité se renouvelle à la prochaine mise à jour du marché.") % capacity)
 		if not quote["affordable"]:
 			tips.append(tr("Trésorerie insuffisante : %s cr requis, %s cr disponibles.") % [
 				_fmt(quote["total_cost"]), _fmt(session.state.money)])
 		if not quote["fits"]:
 			tips.append(tr("Entrepôt trop plein : la livraison attendra au portail."))
-		tips.insert(0, tr("Coût : %s cr · %d places libres dans l'entrepôt") % [
-			_fmt(quote["total_cost"]), quote["free_storage"]])
-		if quote["fits"]:
+		tips.insert(0, tr("Coût : %s cr (%s cr/u au comptant) · %d places libres dans l'entrepôt") % [
+			_fmt(quote["total_cost"]), _fmt(quote["unit_price"]), quote["free_storage"]])
+		if quote["fits"] and not over:
 			button.remove_theme_color_override("font_color")
 		else:
 			button.add_theme_color_override("font_color", Color(COLOR_WARN))
 		button.tooltip_text = "\n".join(tips)
+		if cap_label != null:
+			cap_label.text = tr("illimitée") if capacity < 0 else tr("%d restantes") % capacity
+			cap_label.theme_type_variation = &"DangerLabel" if over else &"DimLabel"
 		if room == null:
 			return
 		room.text = tr("%d places libres") % quote["free_storage"]
@@ -581,6 +667,240 @@ func _bind_order(button: Button, spin: SpinBox, room: Label, supplier_id: String
 	spin.value_changed.connect(refresh)
 	button.pressed.connect(func() -> void: _send(Command.order(supplier_id, component_id, int(spin.value))))
 	refresh.call()
+
+
+# --- Supply contracts tab ---------------------------------------------------
+
+func _build_supply_contracts(box: VBoxContainer) -> void:
+	_build_contract_form(box)
+	_build_supply_contract_list(box)
+	_build_schedule_card(box)
+
+
+## Catalog entries that accept supply contracts: [{supplier_id, component_id, label, terms}].
+func _contract_entries() -> Array:
+	var out: Array = []
+	for supplier_id in session.data.suppliers:
+		var supplier: Dictionary = session.data.suppliers[supplier_id]
+		for entry in supplier["catalog"]:
+			if entry.get("contract_terms", {}).is_empty():
+				continue
+			out.append({"supplier_id": supplier_id, "component_id": entry["component_id"],
+				"label": "%s · %s" % [supplier["name"], _component_name(entry["component_id"])],
+				"terms": entry["contract_terms"]})
+	return out
+
+
+func _form_row(card: VBoxContainer, title: String, control: Control) -> void:
+	var row := _row(card)
+	var title_label := _label(row, title, &"DimLabel")
+	title_label.custom_minimum_size.x = 210
+	title_label.size_flags_horizontal = Control.SIZE_FILL
+	row.add_child(control)
+
+
+func _option_menu(items: Array, selected: int) -> OptionButton:
+	var menu := OptionButton.new()
+	menu.fit_to_longest_item = false
+	menu.clip_text = true
+	menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for item in items:
+		menu.add_item(item)
+	if not items.is_empty():
+		menu.select(clampi(selected, 0, items.size() - 1))
+	return menu
+
+
+func _form_spin(min_value: int, max_value: int, value: int) -> SpinBox:
+	var spin := SpinBox.new()
+	spin.min_value = min_value
+	spin.max_value = max_value
+	spin.step = 1
+	spin.value = value
+	spin.custom_minimum_size = Vector2(90, 0)
+	spin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return spin
+
+
+## "Nouveau contrat" form with a live quote. The widgets are updated in place
+## (no rebuild), so the keyboard focus stays in the spin boxes.
+func _build_contract_form(box: VBoxContainer) -> void:
+	var data := session.data
+	var card := _card(box)
+	_label(card, tr("NOUVEAU CONTRAT D'APPROVISIONNEMENT"), &"HeadingLabel")
+	var entries := _contract_entries()
+	if entries.is_empty():
+		_label(card, tr("(aucun fournisseur ne propose de contrat)"), &"DimLabel")
+		return
+	_sf_entry = clampi(_sf_entry, 0, entries.size() - 1)
+	var params: Dictionary = data.supply_contracts
+	var periods: Array = params["period_options_days"]
+	_sf_period_index = clampi(_sf_period_index, 0, periods.size() - 1)
+	_sf_deliveries = clampi(_sf_deliveries if _sf_deliveries > 0 else int(params["min_deliveries"]),
+		int(params["min_deliveries"]), int(params["max_deliveries"]))
+
+	var labels: Array = []
+	for e in entries:
+		labels.append(e["label"])
+	var supplier_menu := _option_menu(labels, _sf_entry)
+	_form_row(card, tr("Fournisseur · composant"), supplier_menu)
+	var qty := _form_spin(1, 99, 1)
+	_form_row(card, tr("Quantité par livraison"), qty)
+	var period_names: Array = []
+	for p in periods:
+		period_names.append(tr("%d jours") % p)
+	var period_menu := _option_menu(period_names, _sf_period_index)
+	_form_row(card, tr("Période"), period_menu)
+	var deliveries := _form_spin(int(params["min_deliveries"]), int(params["max_deliveries"]), _sf_deliveries)
+	_form_row(card, tr("Nombre de livraisons"), deliveries)
+	var pricing_menu := _option_menu([tr("Prix fixe (prime de fixation)"), tr("Prix indexé sur le marché")],
+		1 if _sf_indexed else 0)
+	_form_row(card, tr("Prix"), pricing_menu)
+	var priority := CheckBox.new()
+	priority.text = tr("Priorité en pénurie (prime)")
+	priority.button_pressed = _sf_priority
+	_form_row(card, tr("Priorité"), priority)
+
+	var quote_grid := GridContainer.new()
+	quote_grid.columns = 2
+	quote_grid.add_theme_constant_override("h_separation", 16)
+	quote_grid.add_theme_constant_override("v_separation", 4)
+	card.add_child(quote_grid)
+	var quote_titles := {"discount": tr("Remise de volume"), "unit_price": tr("Prix unitaire"),
+		"invoice": tr("Facture par livraison"), "total": tr("Engagement total"),
+		"fee": tr("Frais de résiliation (si résilié maintenant)"),
+		"storage": tr("Place en entrepôt par livraison")}
+	var quote_values: Dictionary = {}
+	for key in quote_titles:
+		_grid_label(quote_grid, quote_titles[key], &"DimLabel", true)
+		quote_values[key] = _grid_label(quote_grid, "")
+	var reason_label := _label(card, "", &"WarnLabel")
+	var sign_row := _row(card)
+	var sign_button := _button(sign_row, tr("Signer le contrat"), func() -> void: pass)
+	sign_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	var current_args := func() -> Dictionary:
+		var entry: Dictionary = entries[_sf_entry]
+		return {"supplier_id": entry["supplier_id"], "component_id": entry["component_id"],
+			"quantity": int(qty.value), "period_days": int(periods[_sf_period_index]),
+			"deliveries": int(deliveries.value), "pricing": "indexed" if _sf_indexed else "fixed",
+			"priority": _sf_priority}
+	var update := func() -> void:
+		var args: Dictionary = current_args.call()
+		var quote := SimQueries.supply_contract_quote(session.state, data, args)
+		var unit_text := tr("%s cr/u") % _fmt(quote["unit_price"])
+		if _sf_indexed:
+			unit_text = tr("%s cr/u aujourd'hui (indexé)") % _fmt(quote["unit_price"])
+		quote_values["discount"].text = "%d %%" % quote["discount_pct"]
+		quote_values["unit_price"].text = unit_text
+		quote_values["invoice"].text = tr("%s cr") % _fmt(quote["invoice"])
+		quote_values["total"].text = tr("%s cr") % _fmt(quote["total_commitment"])
+		quote_values["fee"].text = tr("%s cr") % _fmt(quote["termination_fee"])
+		var free: int = SimQueries.order_quote(session.state, data, args["supplier_id"],
+			args["component_id"], 1)["free_storage"]
+		quote_values["storage"].text = tr("%d (libre : %d)") % [quote["storage_units"], free]
+		quote_values["storage"].theme_type_variation = &"WarnLabel" if quote["storage_units"] > free else &"Label"
+		sign_button.disabled = not quote["ok"]
+		reason_label.visible = not quote["ok"]
+		reason_label.text = tr(REJECT_REASONS.get(quote["reason"], quote["reason"]))
+	var apply_entry := func() -> void:
+		var terms: Dictionary = entries[_sf_entry]["terms"]
+		qty.min_value = int(terms["min_quantity"])
+		qty.max_value = int(terms["max_quantity"])
+		if _sf_quantity < 0:
+			_sf_quantity = int(terms["min_quantity"])
+		qty.value = clampi(_sf_quantity, int(terms["min_quantity"]), int(terms["max_quantity"]))
+	apply_entry.call()
+	supplier_menu.item_selected.connect(func(i: int) -> void:
+		_sf_entry = i
+		apply_entry.call()
+		update.call())
+	qty.value_changed.connect(func(v: float) -> void:
+		_sf_quantity = int(v)
+		update.call())
+	period_menu.item_selected.connect(func(i: int) -> void:
+		_sf_period_index = i
+		update.call())
+	deliveries.value_changed.connect(func(v: float) -> void:
+		_sf_deliveries = int(v)
+		update.call())
+	pricing_menu.item_selected.connect(func(i: int) -> void:
+		_sf_indexed = i == 1
+		update.call())
+	priority.toggled.connect(func(on: bool) -> void:
+		_sf_priority = on
+		update.call())
+	sign_button.pressed.connect(func() -> void:
+		var a: Dictionary = current_args.call()
+		_send(Command.sign_supply_contract(a["supplier_id"], a["component_id"], a["quantity"],
+			a["period_days"], a["deliveries"], a["pricing"], a["priority"])))
+	update.call()
+
+
+func _build_supply_contract_list(box: VBoxContainer) -> void:
+	var data := session.data
+	var card := _card(box)
+	_label(card, tr("CONTRATS D'APPROVISIONNEMENT ACTIFS"), &"HeadingLabel")
+	var infos := SimQueries.supply_contract_infos(session.state, data)
+	if infos.is_empty():
+		_label(card, tr("(aucun contrat d'approvisionnement)"), &"DimLabel")
+		return
+	for info in infos:
+		var supplier_name: String = data.suppliers[info["supplier_id"]]["name"]
+		var price := tr("indexé · %s cr/u aujourd'hui") % _fmt(info["unit_price"]) \
+			if info["pricing"] == "indexed" else tr("fixe · %s cr/u") % _fmt(info["unit_price"])
+		var title := "#%d  %s · %d × %s" % [info["id"], supplier_name, info["quantity"],
+			_component_name(info["component_id"])]
+		if info["priority"]:
+			title += tr("  ★ priorité")
+		_label(card, title)
+		_label(card, tr("Tous les %d j · prochaine livraison jour %d%s · %d livraison(s) restante(s) · %s") % [
+			info["period_days"], info["next_delivery_day"],
+			tr(" (sautée)") if info["skip_next"] else "", info["remaining"], price], &"DimLabel")
+		var row := _row(card)
+		var skip := _button(row, tr("Sauter la prochaine livraison (%s cr)") % _fmt(info["skip_cost"]),
+			func() -> void: _send(Command.skip_supply_delivery(info["id"])), not info["can_skip"])
+		skip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		skip.tooltip_text = tr(REJECT_REASONS.get(info["skip_reason"], info["skip_reason"])) \
+			if not info["can_skip"] else tr("Coût immédiat : %s cr (engagement ferme)") % _fmt(info["skip_cost"])
+		var terminate := _button(row, tr("Résilier (%s cr)") % _fmt(info["termination_fee"]),
+			func() -> void: _send(Command.terminate_supply_contract(info["id"])))
+		terminate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		terminate.tooltip_text = tr("Frais de résiliation : %s cr") % _fmt(info["termination_fee"])
+		if info["skip_reason"] != "":
+			_label(card, tr("Saut impossible : %s") % tr(REJECT_REASONS.get(info["skip_reason"], info["skip_reason"])), &"WarnLabel")
+
+
+func _build_schedule_card(box: VBoxContainer) -> void:
+	var card := _card(box)
+	_label(card, tr("ÉCHÉANCIER (%d prochains jours)") % SCHEDULE_DAYS, &"HeadingLabel")
+	var rows := SimQueries.cash_projection(session.state, session.data, SCHEDULE_DAYS)
+	_label(card, tr("Trésorerie projetée : coûts fixes connus (%s cr/j) et factures de contrats, hors recettes.") % _fmt(
+		rows[0]["fixed_costs"]), &"DimLabel")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 4)
+	card.add_child(grid)
+	for title in [tr("Jour"), tr("Livraisons"), tr("Facture"), tr("Trésorerie")]:
+		_grid_label(grid, title, &"DimLabel", title == tr("Livraisons"))
+	for row in rows:
+		_grid_label(grid, tr("J+%d · %d") % [row["day"] - session.state.day, row["day"]], &"DimLabel")
+		var lines: PackedStringArray = []
+		for e in row["entries"]:
+			var what := "%d × %s" % [e["quantity"], _component_name(e["component_id"])]
+			if e["kind"] == "transit":
+				lines.append(tr("transit : %s") % what)
+			else:
+				lines.append(tr("contrat #%d : %s%s") % [e["contract_id"], what,
+					tr(" (sautée)") if e["skipped"] else ""])
+		var entries_label := _grid_label(grid, "\n".join(lines) if lines else "—",
+			&"" if lines else &"DimLabel", true)
+		entries_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		entries_label.custom_minimum_size.x = 180
+		_grid_label(grid, "-%s" % _fmt(row["invoices"]) if row["invoices"] > 0 else "", &"WarnLabel")
+		_grid_label(grid, "%s cr" % _fmt(row["balance"]),
+			&"DangerLabel" if row["balance"] < 0 else &"")
 
 
 # --- Contracts tab ----------------------------------------------------------
@@ -937,8 +1257,37 @@ func _log_event(e: Dictionary) -> void:
 			_log_line(tr("Commande #%d retardée de %d j par %s") % [
 				e["order_id"], e["delay_days"], data.suppliers[e["supplier_id"]]["name"]], COLOR_WARN)
 		"delivery_received":
-			_log_line(tr("Commande #%d livrée : %d × %s") % [
-				e["order_id"], e["quantity"], _component_name(e["component_id"])], COLOR_OK)
+			var from_contract := tr(" (contrat #%d)") % e["contract_id"] if e.get("contract_id") != null else ""
+			_log_line(tr("Commande #%d livrée : %d × %s%s") % [
+				e["order_id"], e["quantity"], _component_name(e["component_id"]), from_contract], COLOR_OK)
+		"market_updated":
+			_log_line(tr("Marché mis à jour"), COLOR_DIM)
+		"shortage_started":
+			_log_line(tr("PÉNURIE : %s, jusqu'au jour %d") % [
+				_component_name(e["component_id"]), e["ends_day"]], COLOR_DANGER)
+		"shortage_ended":
+			_log_line(tr("Fin de la pénurie : %s") % _component_name(e["component_id"]), COLOR_OK)
+		"supply_contract_signed":
+			var price := tr("prix indexé") if e["unit_price"] == null else tr("%s cr/u") % _fmt(e["unit_price"])
+			_log_line(tr("Contrat d'appro #%d signé : %s chez %s (%s, remise %d %%)") % [
+				e["contract_id"], _component_name(e["component_id"]),
+				data.suppliers[e["supplier_id"]]["name"], price, e["discount_pct"]], COLOR_OK)
+		"supply_delivery_dispatched":
+			_log_line(tr("Contrat #%d : %d expédiés (commande #%d), facture -%s cr") % [
+				e["contract_id"], e["quantity"], e["order_id"], _fmt(e["invoice"])], COLOR_ACCENT)
+		"supply_delivery_reduced":
+			_log_line(tr("Contrat #%d : livraison réduite par la pénurie, %d sur %d") % [
+				e["contract_id"], e["quantity_shipped"], e["quantity_contracted"]], COLOR_WARN)
+		"supply_delivery_skipped":
+			_log_line(tr("Contrat #%d : livraison du jour %d sautée (-%s cr)") % [
+				e["contract_id"], e["delivery_day"], _fmt(e["cost"])], COLOR_ACCENT)
+		"supply_penalty_earned":
+			_log_line(tr("Contrat #%d : pénalité de retard reçue +%s cr (%d j de retard)") % [
+				e["contract_id"], _fmt(e["amount"]), e["days_late"]], COLOR_OK)
+		"supply_contract_terminated":
+			_log_line(tr("Contrat d'appro #%d résilié (-%s cr)") % [e["contract_id"], _fmt(e["fee"])], COLOR_DIM)
+		"supply_contract_completed":
+			_log_line(tr("Contrat d'appro #%d terminé") % e["contract_id"], COLOR_DIM)
 		"warehouse_full":
 			_log_line(tr("Entrepôt plein : commande #%d en attente au portail") % e["order_id"], COLOR_WARN)
 		"daily_costs":
@@ -946,6 +1295,10 @@ func _log_event(e: Dictionary) -> void:
 			var launch_costs := int(e.get("scrub_costs", 0)) + int(e.get("refurb_costs", 0))
 			if launch_costs > 0:
 				extra = tr(" · tirs -%s cr") % _fmt(launch_costs)
+			if int(e.get("holding_fees", 0)) > 0:
+				extra += tr(" · frais de garde -%s cr") % _fmt(e["holding_fees"])
+			if int(e.get("supply_penalties", 0)) > 0:
+				extra += tr(" · pénalités reçues +%s cr") % _fmt(e["supply_penalties"])
 			_log_line(tr("── Fin du jour %d · entretien -%s cr · salaires -%s cr%s ──") % [
 				e["day"], _fmt(e["upkeep"]), _fmt(e.get("salaries", 0)), extra], COLOR_DIM)
 		"negative_balance":

@@ -17,6 +17,7 @@ const FAST_FORWARD_STOP_EVENTS := [
 	"launch_scrubbed", "launch_succeeded", "launch_failed",
 	"contract_completed", "contract_failed",
 	"bankruptcy_warning", "game_over",
+	"shortage_started", "supply_delivery_reduced",
 ]
 
 var data: GameData
@@ -50,10 +51,12 @@ func fast_forward() -> int:
 	var days := 0
 	while days < FAST_FORWARD_MAX_DAYS and not state.game_over:
 		var was_negative := state.money < 0
+		var money_before := state.money
 		var events := Simulation.end_day(state, data)
 		all_events.append_array(events)
 		days += 1
-		if _has_stop_event(events) or (state.money < 0 and not was_negative):
+		if _has_stop_event(events) or (state.money < 0 and not was_negative) \
+				or _invoices_overdraw(events, money_before):
 			break
 	if days > 0:
 		changed.emit(all_events)
@@ -65,3 +68,13 @@ static func _has_stop_event(events: Array) -> bool:
 		if event["type"] in FAST_FORWARD_STOP_EVENTS:
 			return true
 	return false
+
+
+## True when the contract invoices dispatched during the day exceed the cash
+## held at the start of the day (the invoice itself would put the balance below zero).
+static func _invoices_overdraw(events: Array, money_before: int) -> bool:
+	var invoiced := 0
+	for event in events:
+		if event["type"] == "supply_delivery_dispatched":
+			invoiced += int(event["invoice"])
+	return invoiced > 0 and invoiced > money_before
