@@ -389,3 +389,49 @@ func test_order_quote_cost_and_storage() -> void:
 	assert_true(not big["fits"])
 	var rich := SimQueries.order_quote(s[0], s[1], "acme", "steel", F.START_MONEY)
 	assert_true(not rich["affordable"])
+
+
+func _contract_setup() -> Array:
+	var s := _state(2)
+	var data: GameData = s[1]
+	data.suppliers["acme"]["catalog"][0]["contract_terms"] = {"min_quantity": 1, "max_quantity": 50}
+	data.supply_contracts = {
+		"period_options_days": [7, 14], "min_deliveries": 2, "max_deliveries": 6,
+		"volume_discount_tiers": [], "fixed_premium_pct": 0, "priority_premium_pct": 0,
+		"late_penalty_pct_per_day": 2, "late_penalty_cap_pct": 20,
+		"holding_fee_per_unit_per_day": 10, "shortage_fill_pct": 50, "take_or_pay_pct": 70,
+		"skip_notice_days": 3, "termination_fee_pct": 40, "max_supply_contracts": 2,
+	}
+	var events := Simulation.apply_command(s[0], Command.sign_supply_contract(
+		"acme", "steel", 10, 7, 3, "fixed"), data)
+	assert_eq(events[0]["type"], "supply_contract_signed")
+	return s
+
+
+func test_cash_projection_cumulates_fixed_costs_and_invoices() -> void:
+	var s := _contract_setup()
+	var state: GameState = s[0]
+	var data: GameData = s[1]
+	var fixed := SimQueries.known_daily_costs(state, data)
+	assert_eq(fixed, F.UPKEEP + F.SHOP_UPKEEP + 2 * F.SALARY)
+	var rows := SimQueries.cash_projection(state, data, 30)
+	assert_eq(rows.size(), 30)
+	assert_eq(rows[0]["day"], state.day + 1)
+	var balance := state.money
+	var invoiced := 0
+	for i in rows.size():
+		balance -= fixed + rows[i]["invoices"]
+		invoiced += rows[i]["invoices"]
+		assert_eq(rows[i]["balance"], balance)
+	assert_eq(invoiced, 3 * 10 * F.UNIT_PRICE)
+	assert_eq(rows[29]["balance"], state.money - 30 * fixed - 3 * 10 * F.UNIT_PRICE)
+
+
+func test_supply_contract_infos_costs_and_skip_notice() -> void:
+	var s := _contract_setup()
+	var infos := SimQueries.supply_contract_infos(s[0], s[1])
+	assert_eq(infos.size(), 1)
+	assert_eq(infos[0]["skip_cost"], 10 * F.UNIT_PRICE * 70 / 100)
+	assert_eq(infos[0]["termination_fee"], 3 * 10 * F.UNIT_PRICE * 40 / 100)
+	assert_eq(infos[0]["remaining"], 3)
+	assert_eq(SimQueries.market_next_update_day(s[0], s[1]), -1)

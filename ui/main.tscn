@@ -140,6 +140,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
+[node name="Approvisionnement" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="SupplyBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Approvisionnement"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
 [node name="Contrats" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
 horizontal_scroll_mode = 3
