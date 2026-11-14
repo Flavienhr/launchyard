@@ -13,6 +13,7 @@ Conséquences :
 - Chaque sous-système tire dans **son propre flux** : `rng_for(state, stream)`, avec une seed `hash([game_seed, day, stream])`.
 - Les flux sont nommés par des constantes : `&"deliveries"`, `&"contracts"`, `&"weather"`, `&"launch"`, `&"events"`. Un nouveau sous-système = un nouveau flux.
 - Dans un même flux, l'ordre des tirages reste celui de l'itération (déterministe).
+- Conséquence assumée : au sein d'un flux, un élément ajouté peut décaler les tirages des éléments suivants **du même jour**. Exemple : les livraisons sous contrat (spec 007) et les commandes au comptant partagent le flux `deliveries`, donc signer un contrat peut changer le tirage de retard d'une commande au comptant due le même jour. Le décalage ne déborde jamais sur un autre jour ni sur un autre flux. Seul le marché (`market`) doit rester totalement exogène aux actions du joueur (spec 007, critère 18).
 - La fonction vit dans `sim/rng.gd` (`class_name SimRng`). `end_day` ne crée plus de RNG lui-même.
 
 ## Alternatives écartées

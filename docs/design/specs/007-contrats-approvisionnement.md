@@ -78,7 +78,7 @@ Précision : la facture tombe à la date **prévue**, qu'il y ait un retard ou u
 ### R8. Résilier
 `terminate_supply_contract(contract_id)` à l'étape 1.
 - Rejets : `unknown_contract`, `insufficient_funds`.
-- Frais : `(livraisons_restantes × quantity × prix_unitaire_courant × termination_fee_pct) div 100`, avec `livraisons_restantes = deliveries − deliveries_done` (une livraison déjà sautée mais pas encore échue compte comme faite). Débit immédiat, le contrat passe en `terminated`, aucune livraison future. Les marchandises déjà expédiées (en transit) arrivent normalement.
+- Frais : `(livraisons_restantes × quantity × prix_unitaire_courant × termination_fee_pct) div 100`, avec `livraisons_restantes = deliveries − deliveries_done − (1 si skip_next, sinon 0)` : une livraison déjà sautée mais pas encore échue est déjà payée (take-or-pay) et compte donc comme faite. Débit immédiat, le contrat passe en `terminated`, aucune livraison future. Les marchandises déjà expédiées (en transit) arrivent normalement.
 
 ### R9. Requêtes (aucun calcul dans l'UI)
 - `spot_price(supplier_id, component_id)`, `spot_capacity_remaining(supplier_id, component_id)`, `market_snapshot()` (indice, variation depuis la période précédente, pénurie et son `ends_day`, par composant).
