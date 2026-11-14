@@ -111,6 +111,9 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 			count += 1  # "building" instances count too
 	if count >= int(def.get("max_count", 0)):
 		return [_rejected("max_count_reached", command)]
+	var missing := _missing_prerequisites(state, def)  # spec 006 R3
+	if not missing.is_empty():
+		return [_rejected("missing_prerequisite", command, {"missing": missing})]
 	var cost := int(def["build_cost"])
 	if cost > state.money:
 		return [_rejected("insufficient_funds", command)]
@@ -121,6 +124,21 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 	return [_event("facility_build_started", {
 		"facility_id": instance["id"], "facility_type": type, "cost": cost, "ready_day": instance["ready_day"],
 	})]
+
+
+## Types listés dans `requires_facilities` qui n'ont aucune instance `ready`.
+## Une instance `building` ne compte pas.
+static func _missing_prerequisites(state: GameState, def: Dictionary) -> Array:
+	var missing: Array = []
+	for required in def.get("requires_facilities", []):
+		var met := false
+		for facility in state.facilities:
+			if facility["type"] == required and facility["status"] == "ready":
+				met = true
+				break
+		if not met:
+			missing.append(required)
+	return missing
 
 
 static func _apply_hire(state: GameState, args: Dictionary, data: GameData) -> Array:
@@ -786,5 +804,7 @@ static func _event(type: String, fields: Dictionary) -> Dictionary:
 	return event
 
 
-static func _rejected(reason: String, command: Command) -> Dictionary:
-	return _event("command_rejected", {"reason": reason, "command": command.to_dict()})
+static func _rejected(reason: String, command: Command, extra := {}) -> Dictionary:
+	var fields := {"reason": reason, "command": command.to_dict()}
+	fields.merge(extra)
+	return _event("command_rejected", fields)
