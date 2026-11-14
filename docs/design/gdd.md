@@ -69,3 +69,8 @@ Lanceur L1
 
 ## 9. Hors périmètre MVP
 Réutilisabilité, multi-sites, Lune/Mars, mode bac à sable, staff animé.
+
+## 10. Idées en attente
+Idées notées, ni spécifiées ni planifiées. Chacune passera par une spec avant toute issue.
+
+- **Navigateur web dans le jeu** (idée de Flavien, 2026-11-14). Sur le modèle de GTA V : un faux navigateur avec de faux sites de fournisseurs (catalogue, fiche produit, panier, page « Devenir partenaire » pour signer un contrat d'approvisionnement), tous fictifs. C'est une **couche de présentation** : une autre UI qui émet les mêmes Commandes de la sim (`order`, `sign_supply_contract`, etc., specs 001 et 007) et lit les mêmes requêtes. Elle ne contient aucune règle de jeu (ADR 0002). Prévue pour la **phase de polish**, après les panneaux en rectangles. Points à creuser le moment venu : coexistence avec les panneaux « rapides » (le navigateur doit rester optionnel pour le joueur pressé), et identité visuelle de chaque faux site, cohérente avec le guide de style.
