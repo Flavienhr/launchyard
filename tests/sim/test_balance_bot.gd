@@ -31,7 +31,8 @@ func test_reserve_is_two_bought_kits() -> void:
 func test_no_rejected_commands_on_a_short_game() -> void:
 	var data := DataLoader.load_default()
 	for strategy in [BalanceBot.BUY_ALL, BalanceBot.WORKSHOP, BalanceBot.INTEGRATE_STAGED,
-			BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY]:
+			BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY, BalanceBot.CONTRACT_ENGINES,
+			BalanceBot.CONTRACT_FULL_KIT, BalanceBot.CONTRACT_OVERCOMMIT, BalanceBot.OPPORTUNIST]:
 		var bot := BalanceBot.new(strategy, data, SEED_A)
 		bot.play(SHORT_GAME_DAYS)
 		assert_eq(bot.rejections, {}, "stratégie %s" % strategy)
@@ -60,3 +61,24 @@ func test_staged_waits_for_the_reserve_greedy_does_not() -> void:
 		assert_true(int(staged.built_day["tank_shop"]) >= int(greedy.built_day["tank_shop"]))
 	assert_true(not staged.built_day.has("engine_shop") or staged.built_day.has("machine_shop"),
 		"l'atelier moteurs exige l'atelier d'usinage")
+
+
+## contract_engines signe un contrat fixe et prioritaire sur le composant le plus cher du kit.
+func test_contract_engines_signs_a_priority_fixed_contract() -> void:
+	var data := DataLoader.load_default()
+	var bot := BalanceBot.new(BalanceBot.CONTRACT_ENGINES, data, SEED_A)
+	bot.play(SHORT_GAME_DAYS)
+	assert_true(bot.contracts_signed >= 1)
+	var contract: Dictionary = bot.state.supply_contracts[0]
+	assert_eq(contract["component_id"], bot._engine_component())
+	assert_eq(contract["pricing"], BalanceBot.FIXED)
+	assert_true(bool(contract["priority"]))
+
+
+## Les stratégies sans contrat n'en signent jamais ; le seuil d'opportunist est un paramètre du bot.
+func test_only_contract_strategies_sign_contracts() -> void:
+	var data := DataLoader.load_default()
+	var bot := BalanceBot.new(BalanceBot.BUY_ALL, data, SEED_A)
+	bot.play(SHORT_GAME_DAYS)
+	assert_eq(bot.contracts_signed, 0)
+	assert_eq(BalanceBot.OPPORTUNIST_INDEX, 950)
