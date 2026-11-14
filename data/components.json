@@ -34,6 +34,34 @@
       "mass_kg": 600,
       "storage_units": 12,
       "_note": "Achetable uniquement en phase 2. Spec 001, R1."
+    },
+    {
+      "id": "alloy_billet",
+      "name": "Lingots de superalliage",
+      "mass_kg": 250,
+      "storage_units": 1,
+      "_note": "Achetable. Entrée des turbopompes et des moteurs. Spec 006, R1."
+    },
+    {
+      "id": "electronic_kit",
+      "name": "Lot de composants électroniques",
+      "mass_kg": 20,
+      "storage_units": 1,
+      "_note": "Achetable. Entrée de l'avionique. Spec 006, R1."
+    },
+    {
+      "id": "composite_roll",
+      "name": "Rouleau de fibre composite préimprégnée",
+      "mass_kg": 100,
+      "storage_units": 2,
+      "_note": "Achetable. Entrée de la coiffe. Spec 006, R1."
+    },
+    {
+      "id": "turbopump",
+      "name": "Turbopompe",
+      "mass_kg": 300,
+      "storage_units": 2,
+      "_note": "Non achetable : fabriquée à l'atelier d'usinage. Pièce intermédiaire du moteur. Spec 006, R1."
     }
   ]
 }
