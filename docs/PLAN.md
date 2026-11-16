@@ -6,8 +6,9 @@
 |---|---|---|
 | **0. Fondations** ✅ | Repo, CLAUDE.md, ADR, CI minimale | `make test` tourne en CI sur une sim vide |
 | **1. Spike technique** ✅ | Valider la chaîne complète sur un cas jouet | 1 ressource, 1 fournisseur, 1 bâtiment, « Fin de journée » qui fait évoluer l'argent ; test headless + export Mac/Linux/Windows |
-| **2. Boucle de jeu (moche)** | La boucle complète jouable avec des rectangles | Commander → recevoir → assembler → lancer → être payé. **Est-ce que c'est fun ?** |
-| **3. MVP** | Un niveau complet (1 site) avec objectifs en étoiles | Partie de 30-60 min jouable par un tiers, build itch.io |
+| **2. Boucle de jeu (moche)** ✅ | La boucle complète jouable avec des rectangles | Commander → recevoir → assembler → lancer → être payé. **Est-ce que c'est fun ?** |
+| **2b. Chaîne logistique** ✅ | Intégration verticale (spec 006), marché et contrats d'approvisionnement (spec 007) | La partie reste intéressante au-delà de 40 tours ; `make balance` : aucune stratégie dominante |
+| **3. MVP** 🚧 | Un niveau complet (1 site) avec objectifs en étoiles, base vue de dessus (specs 008, 009), sauvegarde | Partie de 30-60 min jouable par un tiers, build itch.io |
 | **4. Contenu et polish** | Style visuel final, sons, recherche, événements | – |
 | **5. Multi-sites** | Campagne de plusieurs sites, réseau de flux | – |
 | **DLC** | Orbite, Lune, Mars (nouveaux `Site` + systèmes) | – |
