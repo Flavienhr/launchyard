@@ -63,9 +63,6 @@ const BLOCK_REASONS := {
 
 var session: GameSession
 
-# Jobs scrapped per recipe since the game started (UI tally of job_scrapped events, display only).
-var _scrapped: Dictionary = {}
-
 # Launch form selection (UI state only). -1 = not chosen yet, first valid option is used.
 var _sel_launcher := -1
 var _sel_pad := -1
@@ -99,6 +96,7 @@ const SCHEDULE_DAYS := 30
 @onready var _banner_label: Label = %BannerLabel
 @onready var _game_over: Control = %GameOver
 @onready var _game_over_summary: Label = %Summary
+@onready var _start_screen: Control = %StartScreen
 @onready var _log: RichTextLabel = %LogText
 
 
@@ -106,22 +104,82 @@ func _ready() -> void:
 	%EndDayButton.pressed.connect(func() -> void: session.end_day())
 	%FastForwardButton.pressed.connect(_on_fast_forward)
 	%NewGameButton.pressed.connect(_new_game)
+	%SaveButton.pressed.connect(_on_save)
+	%LoadButton.pressed.connect(_on_load)
+	%ContinueButton.pressed.connect(_on_continue)
+	%StartNewButton.pressed.connect(_new_game)
 	var titles := [tr("Installations"), tr("Construction"), tr("Nomenclature"),
 		tr("Fournisseurs"), tr("Appro."), tr("Contrats"), tr("Lancement")]
 	for i in titles.size():
 		_tabs.set_tab_title(i, titles[i])
+	var autosave := SaveGame.read(SaveGame.AUTOSAVE_PATH)
+	if autosave["ok"]:
+		_new_game()  # a session must exist behind the start screen
+		var saved: GameState = autosave["state"]
+		%StartSummary.text = tr("Dernière partie : jour %d, trésorerie %s cr.") % [saved.day, _fmt(saved.money)]
+		%ContinueButton.text = tr("CONTINUER (JOUR %d, %s CR)") % [saved.day, _fmt(saved.money)]
+		_start_screen.visible = true
+		return
 	_new_game()
+	if autosave["reason"] != "missing":
+		_log_line(tr("Sauvegarde automatique ignorée (%s)") % _save_reason(autosave["reason"]), COLOR_WARN)
 
 
-func _new_game() -> void:
-	randomize()
-	session = GameSession.new(DataLoader.load_default(), randi())
+func _save_reason(reason: String) -> String:
+	match reason:
+		"missing": return tr("fichier absent")
+		"version": return tr("version inconnue")
+		"io": return tr("écriture impossible")
+	return tr("fichier illisible")
+
+
+func _attach(new_session: GameSession) -> void:
+	session = new_session
+	session.autosave_path = SaveGame.AUTOSAVE_PATH
 	session.changed.connect(_on_session_changed)
 	_sel_launcher = -1
 	_sel_pad = -1
 	_sel_contract = -1
 	_sel_day = -1
-	_scrapped.clear()
+	_log.clear()
+
+
+func _on_save() -> void:
+	var result := session.save_to(SaveGame.MANUAL_PATH)
+	if result["ok"]:
+		_log_line(tr("Partie sauvegardée (jour %d)") % session.state.day, COLOR_OK)
+	else:
+		_log_line(tr("Sauvegarde impossible (%s)") % _save_reason(result["reason"]), COLOR_DANGER)
+
+
+func _on_load() -> void:
+	_load_from(SaveGame.MANUAL_PATH)
+
+
+func _on_continue() -> void:
+	_load_from(SaveGame.AUTOSAVE_PATH)
+
+
+func _load_from(path: String) -> void:
+	var result := GameSession.load_from(path, session.data)
+	if not result["ok"]:
+		_start_screen.visible = false
+		_log_line(tr("Chargement impossible : %s") % _save_reason(result["reason"]), COLOR_WARN)
+		return
+	_start_screen.visible = false
+	_attach(result["session"])
+	_log_line(tr("Partie chargée (jour %d)") % session.state.day, COLOR_DIM)
+	_refresh()
+
+
+func _new_game() -> void:
+	_start_screen.visible = false
+	randomize()
+	_attach(GameSession.new(DataLoader.load_default(), randi()))
+	_sel_launcher = -1
+	_sel_pad = -1
+	_sel_contract = -1
+	_sel_day = -1
 	_log.clear()
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
 	_refresh()
@@ -344,7 +402,7 @@ func _build_jobs(card: VBoxContainer, info: Dictionary) -> void:
 				roundi(scrap["floor"] * 100), scrap["attempts_to_floor"]]
 		else:
 			text += tr(" (plancher atteint)")
-		var lost := int(_scrapped.get(recipe_id, 0))
+		var lost := int(scrap["scrapped"])
 		if lost > 0:
 			text += tr(" · %d raté(s)") % lost
 		_label(card, text, &"WarnLabel" if lost > 0 else &"DimLabel")
@@ -1358,7 +1416,6 @@ func _log_event(e: Dictionary) -> void:
 		"output_blocked":
 			_log_line(tr("Job #%d : sortie bloquée, entrepôt plein") % e["job_id"], COLOR_WARN)
 		"job_scrapped":
-			_scrapped[e["recipe_id"]] = int(_scrapped.get(e["recipe_id"], 0)) + 1
 			_log_line(tr("Job #%d RATÉ : %s mis au rebut (taux %d %%), composants perdus") % [
 				e["job_id"], _recipe_name(e["recipe_id"]), roundi(float(e["scrap_rate"]) * 100)], COLOR_DANGER)
 		"job_completed":

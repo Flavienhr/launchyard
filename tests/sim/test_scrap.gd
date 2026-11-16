@@ -103,6 +103,18 @@ func test_certain_scrap() -> void:
 	assert_eq(r.state.recipe_attempts["make_engine"], 1)
 
 
+func test_recipe_scrapped_counts_and_survives_json() -> void:
+	var s := _setup({"scrap_rate_start": 1.0, "scrap_rate_floor": 1.0})
+	var state: GameState = s[0]
+	state.stock = {"part": 1, "ore": 1}
+	var r := F.run(state, s[1], 1, {0: _queue_engine(state)})
+	assert_eq(r.state.recipe_scrapped["make_engine"], 1)
+	assert_eq(SimQueries.scrap_info(r.state, s[1], "make_engine")["scrapped"], 1)
+	var restored := GameState.from_dict(JSON.parse_string(JSON.stringify(r.state.to_dict())))
+	assert_eq(restored.recipe_scrapped["make_engine"], 1)
+	assert_eq(typeof(restored.recipe_scrapped["make_engine"]), TYPE_INT)
+
+
 ## Scrap results of the forge over 20 seeds, with or without a mill job the same day.
 func _forge_outcomes(with_mill: bool) -> Array:
 	var out: Array = []

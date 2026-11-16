@@ -23,6 +23,8 @@ const FAST_FORWARD_STOP_EVENTS := [
 var data: GameData
 var state: GameState
 var command_log: Dictionary = {}  # day -> Array of Command.to_dict()
+## Where the end-of-day autosave goes. Empty = no autosave (tests, bots).
+var autosave_path := ""
 
 
 func _init(p_data: GameData, game_seed: int) -> void:
@@ -40,7 +42,35 @@ func submit(command: Command) -> void:
 func end_day() -> void:
 	if state.game_over:
 		return
-	changed.emit(Simulation.end_day(state, data))
+	var events := Simulation.end_day(state, data)
+	_autosave()
+	changed.emit(events)
+
+
+## Writes the current game. Returns SaveGame.write()'s {ok, reason}.
+func save_to(path: String) -> Dictionary:
+	return SaveGame.write(path, state, command_log)
+
+
+## Rebuilds a session from a file. Returns {ok, reason, session}.
+static func load_from(path: String, p_data: GameData) -> Dictionary:
+	var result := SaveGame.read(path)
+	if not result["ok"]:
+		return {"ok": false, "reason": result["reason"], "session": null}
+	var session := GameSession.new(p_data, 0)
+	session.state = result["state"]
+	session.command_log = result["command_log"]
+	return {"ok": true, "reason": "", "session": session}
+
+
+## One autosave per call; a finished game deletes it instead.
+func _autosave() -> void:
+	if autosave_path == "":
+		return
+	if state.game_over:
+		SaveGame.remove(autosave_path)
+	else:
+		save_to(autosave_path)
 
 
 ## Chains end_day() and stops after the first day that holds a stop event, when
@@ -59,6 +89,7 @@ func fast_forward() -> int:
 				or _invoices_overdraw(events, money_before):
 			break
 	if days > 0:
+		_autosave()
 		changed.emit(all_events)
 	return days
 

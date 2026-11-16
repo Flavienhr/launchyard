@@ -640,6 +640,7 @@ static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
 		job["scrap_rate"] = rate
 		if scrapped:
 			facility["jobs"].pop_front()
+			state.recipe_scrapped[job["recipe_id"]] = int(state.recipe_scrapped.get(job["recipe_id"], 0)) + 1
 			events.append(_event("job_scrapped", {
 				"job_id": job["id"], "facility_id": facility["id"],
 				"recipe_id": job["recipe_id"], "scrap_rate": rate,

@@ -693,7 +693,7 @@ static func _make_chain(state: GameState, data: GameData, recipe_id: String) -> 
 
 
 ## Scrap curve of a recipe for display: {start, current, floor, attempts,
-## attempts_to_floor (0 when already at the floor)}.
+## attempts_to_floor (0 when already at the floor), scrapped (jobs lost so far)}.
 static func scrap_info(state: GameState, data: GameData, recipe_id: String) -> Dictionary:
 	var recipe: Dictionary = data.recipes[recipe_id]
 	var start := float(recipe.get("scrap_rate_start", 0))
@@ -704,7 +704,8 @@ static func scrap_info(state: GameState, data: GameData, recipe_id: String) -> D
 	if drop > 0.0 and start > floor_rate:
 		to_floor = maxi(0, ceili((start - floor_rate) / drop - 0.000001) - attempts)
 	return {"start": start, "current": scrap_rate(state, data, recipe_id), "floor": floor_rate,
-		"attempts": attempts, "attempts_to_floor": to_floor, "has_scrap": start > 0.0}
+		"attempts": attempts, "attempts_to_floor": to_floor, "has_scrap": start > 0.0,
+		"scrapped": int(state.recipe_scrapped.get(recipe_id, 0))}
 
 
 # --- Market (spec 007) ---
