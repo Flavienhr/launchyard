@@ -110,3 +110,22 @@ func test_fast_forward_autosaves_once_at_the_end() -> void:
 	var days := session.fast_forward()
 	assert_eq(SaveGame.read(PATH)["saved_day"], days)
 	_cleanup()
+
+
+## Compatibility guard: a save written with the current SAVE_VERSION must keep
+## loading. If this fails after adding a GameState field, either give the field a
+## default in GameState.from_dict and list it in SaveGame.OPTIONAL_STATE_KEYS, or
+## bump SaveGame.SAVE_VERSION and generate tests/ui/fixtures/save_v<N>.json again
+## (a 4-day game on the test fixtures, seed 5, one order of 3 steel on day 0).
+func test_reference_save_still_loads_and_plays() -> void:
+	var path := "res://tests/ui/fixtures/save_v%d.json" % SaveGame.SAVE_VERSION
+	var loaded := GameSession.load_from(path, F.data())
+	assert_true(loaded["ok"], "reference save refused (%s): read the comment above this test" % loaded["reason"])
+	if not loaded["ok"]:
+		return
+	var session: GameSession = loaded["session"]
+	assert_eq(session.state.day, 4)
+	assert_eq(session.state.money, 9500)
+	for i in 5:
+		session.end_day()
+	assert_eq(session.state.day, 9)

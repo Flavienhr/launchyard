@@ -24,6 +24,9 @@ Implémenté : 1 (dont contrats d'approvisionnement spec 007 R4-R8 : signature, 
 
 Modifier cet ordre = un nouvel ADR.
 
+## Sauvegardes
+`GameState.to_dict()` est le format de sauvegarde (`ui/save_game.gd`). **Tout nouveau champ de `GameState`** doit avoir une valeur par défaut dans `from_dict` (`d.get("champ", défaut)`) et être ajouté à `SaveGame.OPTIONAL_STATE_KEYS`, pour que les anciennes sauvegardes se chargent. Si l'ancien format n'a plus de sens, incrémente `SaveGame.SAVE_VERSION` et régénère la sauvegarde de référence (voir `tests/ui/test_save_game.gd`). Un test échoue si tu l'oublies.
+
 ## Tests
 - Chaque règle a au moins un test : état initial + commandes + N jours → assertions.
 - Les tests vivent dans `tests/sim/test_*.gd` (classe `TestCase`, méthodes `test_*`) et tournent avec `make test`.
