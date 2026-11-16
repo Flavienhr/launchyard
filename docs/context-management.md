@@ -18,7 +18,7 @@
 
 ### 3. Subagents (`.claude/agents/*.md`)
 - Chaque subagent a **son propre contexte** et ne renvoie qu'un résultat condensé. L'exploration bruyante ne pollue donc pas la session principale.
-- Le champ `model:` du frontmatter fixe le modèle. C'est là qu'on applique la hiérarchie Haiku/Sonnet/Opus.
+- Le champ `model:` du frontmatter fixe le modèle. C'est là qu'on applique la hiérarchie Haiku/Sonnet/Fable.
 - Le champ `tools:` restreint les outils : moindre privilège, et moins de tentations hors périmètre.
 
 ### 4. Skills (`.claude/skills/`, plus tard)
@@ -33,7 +33,7 @@ Des automatismes exécutés par le harnais, pas par le modèle. Exemple : lancer
 3. Petits fichiers, une responsabilité chacun. Lire 3000 lignes pour en modifier 10 gaspille des tokens.
 4. `grep` avant `Read`. Lire des extraits, pas des fichiers entiers.
 5. Ne jamais coller de logs ou de JSON complets : extraire la partie utile par script.
-6. Design et architecture en Opus, **une fois**, puis exécution en Sonnet ou Haiku à partir des documents produits.
+6. Design et architecture avec le gros modèle (Fable), **une fois**, puis exécution en Sonnet ou Haiku à partir des documents produits.
 
 ## Pourquoi les docs agents sont en Markdown et pas en Typst
 Les modèles lisent le Markdown nativement, il n'y a pas d'étape de compilation, et GitHub l'affiche directement. Les **livrables humains** (pitch, rapport, présentation) restent en Typst et pourront être générés depuis ces Markdown.

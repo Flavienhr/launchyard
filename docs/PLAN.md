@@ -21,8 +21,8 @@ Flavien = **directeur créatif + producteur** : il fixe la vision, arbitre et me
 
 | Rôle | Agent (`.claude/agents/`) | Modèle | Entrée | Sortie | Vérification |
 |---|---|---|---|---|---|
-| Game designer | `game-designer` | Opus | idée, GDD | spec dans `docs/design/specs/` | review Flavien |
-| Architecte | (session principale) | Opus | spec | ADR, découpage en issues | review Flavien |
+| Game designer | `game-designer` | Fable | idée, GDD | spec dans `docs/design/specs/` | review Flavien |
+| Architecte | (session principale) | Fable | spec | ADR, découpage en issues | review Flavien |
 | Dev sim | `sim-dev` | Sonnet | issue + spec | code `sim/` + tests | `make test` |
 | Dev UI | `ui-dev` | Sonnet | issue + maquette | scènes `ui/` | revue visuelle |
 | Équilibrage | `data-balancer` | Haiku | spec + rapport `make balance` | `data/*.json` | `make validate` + `make balance` |
@@ -50,7 +50,7 @@ Hiérarchie, dans l'ordre de préférence :
 1. **Script (0 token)** : tests, validation, rendu d'assets, simulations d'équilibrage, export, release.
 2. **Haiku** : tâches mécaniques sur une spec claire (remplir des données, traductions, triage, résumés de logs).
 3. **Sonnet** : implémenter une issue bien spécifiée, relire une PR.
-4. **Opus** : design, architecture, découpage, bugs transverses.
+4. **Fable** (le gros modèle de la session ; Opus avant novembre 2026) : design, architecture, découpage, bugs transverses.
 
 Détails et mécanismes : `docs/context-management.md`.
 
