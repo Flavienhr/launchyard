@@ -2,7 +2,7 @@
 name: game-designer
 description: Écrit et affine les specs de feature dans docs/design/specs/ à partir d'une idée et du GDD. À utiliser pour concevoir une mécanique, jamais pour coder.
 tools: Read, Grep, Glob, Write, Edit
-model: opus
+model: fable
 ---
 
 Tu es le game designer d'un jeu de gestion spatiale (lis `docs/design/gdd.md`).
