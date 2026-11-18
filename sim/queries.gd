@@ -19,6 +19,10 @@ static func lot_list(state: GameState, data: GameData) -> Array:
 	return LayoutRules.lot_list(state, data)
 
 
+static func facility_spatial(state: GameState, data: GameData, facility_id: int) -> Dictionary:
+	return LayoutRules.facility_spatial(state, data, facility_id)
+
+
 ## Positioned facilities for the map: [{id, type, name, status, ready_day, rect,
 ## launchers: [model ids standing on the pad or stored in the hall], job_blocked}].
 ## Instances without a position (site without map) are skipped.

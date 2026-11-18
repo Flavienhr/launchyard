@@ -13,8 +13,11 @@ setup: ## Crée le venv Python des outils
 import: ## Met à jour le cache Godot (classes globales, imports d'assets)
 	@$(GODOT) --headless --path . --import >/dev/null 2>&1 || $(GODOT) --headless --path . --import
 
-test: import ## Tests de la sim en headless
-	@$(GODOT) --headless --path . -s tests/run.gd
+test: import ## Tests en headless ; échoue aussi sur toute SCRIPT ERROR (le runner ne les compte pas)
+	@$(GODOT) --headless --path . -s tests/run.gd > .test_output.log 2>&1; code=$$?; \
+	grep -v "^Godot Engine" .test_output.log; \
+	if grep -q "SCRIPT ERROR" .test_output.log; then echo "ÉCHEC : SCRIPT ERROR pendant les tests (voir ci-dessus)"; exit 1; fi; \
+	exit $$code
 
 validate: ## Valide data/ contre data/schemas/
 	@$(PYTHON) tools/validate_data.py
