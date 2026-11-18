@@ -379,7 +379,16 @@ static func _apply_schedule_launch(state: GameState, args: Dictionary, data: Gam
 	var model: Dictionary = data.launchers.get(launcher["model"], {})
 	if int(contract["payload_kg"]) > LaunchRules.payload_capacity(model, contract["orbit"], site):
 		return [_rejected("payload_too_heavy", command)]
+	# Spec 008 R7: distance hall <-> pad on a site with rules, else the fixed rollout_days (spec 003 R2).
 	var lead := 1 if on_pad else int(data.facilities[pad["type"]]["rollout_days"])
+	var rollout_cost := 0
+	if not on_pad and LayoutRules.rules_on(data):
+		var hall_rect := LayoutRules.instance_rect(data, _find_facility(state, int(launcher["location_facility_id"])))
+		var pad_rect := LayoutRules.instance_rect(data, pad)
+		if not hall_rect.is_empty() and not pad_rect.is_empty():
+			var gap := LayoutRules.gap_cells(hall_rect, pad_rect)
+			lead = LayoutRules.rollout_days(data, gap)
+			rollout_cost = LayoutRules.rollout_cost(data, gap)
 	if launch_day < state.day + lead:
 		return [_rejected("too_early", command)]
 	if launch_day > int(contract["deadline_day"]):
@@ -401,7 +410,9 @@ static func _apply_schedule_launch(state: GameState, args: Dictionary, data: Gam
 	state.next_launch_id += 1
 	state.launches.append(launch)
 	state.money -= premium
-	var events := [_event("launch_scheduled", {"launch_id": launch["id"], "launch_day": launch_day})]
+	state.pending_rollout_costs += rollout_cost  # debited at step 8, not refunded
+	var events := [_event("launch_scheduled", {"launch_id": launch["id"], "launch_day": launch_day,
+		"rollout_days": lead, "rollout_cost": rollout_cost})]
 	if insured:
 		events.append(_event("insurance_paid", {"launch_id": launch["id"], "premium": premium}))
 	return events
@@ -460,6 +471,8 @@ static func _resolve_launches(state: GameState, data: GameData, costs: Dictionar
 	for launch in state.launches.duplicate():  # copy: resolved launches are removed
 		if launch["launch_day"] != state.day:
 			continue
+		if _find_by_id(state.launches, launch["id"]).is_empty():
+			continue  # cancelled earlier today by a destroyed launcher (spec 008 R5b): no draw
 		var pad := _find_facility(state, launch["pad_id"])
 		var pad_type: Dictionary = data.facilities[pad["type"]]
 		var season := LaunchRules.season_of(state.day, site)
@@ -476,6 +489,7 @@ static func _resolve_launches(state: GameState, data: GameData, costs: Dictionar
 		var reliability := LaunchRules.model_reliability(data.launchers[model_id], int(stats["successes"]))
 		var fields := {"launch_id": launch["id"], "contract_id": launch["contract_id"], "reliability": reliability}
 		var refurb_days: int
+		var failed := false
 		if launch_rng.randf() < reliability:
 			stats["successes"] = int(stats["successes"]) + 1
 			state.model_stats[model_id] = stats
@@ -484,6 +498,7 @@ static func _resolve_launches(state: GameState, data: GameData, costs: Dictionar
 			refurb_days = int(pad_type["refurb_days"])
 			costs["refurb_costs"] += int(pad_type["refurb_cost"])
 		else:  # reliability is unchanged by a failure (decision 3)
+			failed = true
 			events.append(_event("launch_failed", fields))
 			events.append_array(fail_contract(state, data, launch["contract_id"], ContractRules.LAUNCH_FAILED))
 			refurb_days = int(pad_type["refurb_days_after_failure"])
@@ -495,6 +510,41 @@ static func _resolve_launches(state: GameState, data: GameData, costs: Dictionar
 		state.launchers.erase(launcher)  # consumed in both cases
 		state.launches.erase(launch)
 		start_refurbishment(pad, state.day + refurb_days)
+		if failed and LayoutRules.rules_on(data):
+			events.append_array(_apply_failure_damage(state, data, pad))
+	return events
+
+
+## Spec 008 R5b: consequences of a failed launch on the pad's safety zone,
+## instances by ascending id. Repair costs are debited at step 8.
+static func _apply_failure_damage(state: GameState, data: GameData, failed_pad: Dictionary) -> Array:
+	var events: Array = []
+	var repair_days := int(data.layout["damage_repair_days"])
+	for facility in LayoutRules.zone_contents(state, data, failed_pad):
+		if facility["status"] == "ready":
+			var cost := LayoutRules.repair_cost(data, facility)
+			facility["damaged_until_day"] = state.day + repair_days
+			state.pending_repair_costs += cost
+			events.append(_event("facility_damaged", {"facility_id": facility["id"], "pad_id": failed_pad["id"],
+				"repair_cost": cost, "until_day": facility["damaged_until_day"]}))
+		else:  # building (construction or move): delayed, free
+			facility["ready_day"] += repair_days
+			events.append(_event("facility_damaged", {"facility_id": facility["id"], "pad_id": failed_pad["id"],
+				"repair_cost": 0, "until_day": facility["ready_day"]}))
+		# Launchers standing in this hall or on this other pad are destroyed.
+		for launcher in state.launchers.duplicate():
+			if launcher["location_facility_id"] != facility["id"]:
+				continue
+			state.launchers.erase(launcher)
+			events.append(_event("launcher_destroyed", {"launcher_id": launcher["id"], "facility_id": facility["id"]}))
+			var planned := _launch_for(state, "launcher_id", launcher["id"])
+			if not planned.is_empty():
+				state.launches.erase(planned)  # the contract stays active, without a launch
+				events.append(_event("launch_cancelled", {"launch_id": planned["id"],
+					"launch_day": planned["launch_day"], "reason": "launcher_destroyed"}))
+		if facility["status"] == "ready" and LayoutRules.is_pad_instance(data, facility):
+			var pad_def: Dictionary = data.facilities[facility["type"]]
+			start_refurbishment(facility, state.day + int(pad_def["refurb_days_after_failure"]))
 	return events
 
 
@@ -539,6 +589,7 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 		"x": null,              # spec 008 R2: top-left cell after rotation; null without a map
 		"y": null,
 		"rotation": null,
+		"damaged_until_day": -1,  # spec 008 R5b: damaged while > current day
 	}
 	if data.facilities[type].has("rollout_days"):
 		instance["pad_state"] = PAD_FREE  # pads only; "status" stays building/ready
@@ -555,6 +606,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	var supply_flows := {"penalties": 0}  # supplier penalties earned at step 2, credited at step 8
 	events.append_array(_resolve_deliveries(state, data, supply_flows))
 	events.append_array(_resolve_constructions(state))
+	events.append_array(_resolve_repairs(state))
 	events.append_array(_resolve_production(state, data))
 	events.append_array(_resolve_pads(state))
 	var launch_costs := {"scrub_costs": 0, "refurb_costs": 0}  # paid at step 8
@@ -634,23 +686,51 @@ static func _resolve_constructions(state: GameState) -> Array:
 	return events
 
 
+## Step 3 (spec 008 R5b): the day's resolution is the last one of the repair.
+static func _resolve_repairs(state: GameState) -> Array:
+	var events: Array = []
+	for facility in state.facilities:
+		if facility["status"] == "ready" and int(facility["damaged_until_day"]) == state.day + 1:
+			events.append(_event("facility_repaired", {"facility_id": facility["id"]}))
+	return events
+
+
+## Step 4, first part (spec 008 R5a): ready instances inside the zone of a pad
+## that has a launch today do nothing. Returns their ids; one event each.
+static func _resolve_evacuations(state: GameState, data: GameData, events: Array) -> Array:
+	var evacuated: Array = []
+	if not LayoutRules.rules_on(data):
+		return evacuated
+	for facility in state.facilities:
+		if facility["status"] != "ready":
+			continue
+		for pad_id in LayoutRules.zone_pad_ids(state, data, LayoutRules.instance_rect(data, facility), facility["id"]):
+			if LayoutRules.pad_fires_today(state, pad_id):
+				evacuated.append(facility["id"])
+				events.append(_event("facility_evacuated", {"facility_id": facility["id"], "pad_id": pad_id}))
+				break
+	return evacuated
+
+
 ## Step 4 (spec 001 R5). Instances by ascending id (stable stock contention).
 ## At most one job completes per instance per day.
 static func _resolve_production(state: GameState, data: GameData) -> Array:
 	var events: Array = []
 	# One shared stream for the whole step: instances draw in ascending id order.
 	var rng := SimRng.for_stream(state, SimRng.PRODUCTION)
+	var evacuated := _resolve_evacuations(state, data, events)
 	for facility in state.facilities:
 		if facility["status"] != "ready" or facility["jobs"].is_empty():
 			continue
+		if facility["id"] in evacuated or LayoutRules.is_damaged(state, facility):
+			continue  # spec 008 R5a/R5b: does nothing today
 		var job: Dictionary = facility["jobs"][0]
 		var recipe: Dictionary = data.recipes[job["recipe_id"]]
 		if not job["started"]:
 			if _start_job(state, data, facility, job, recipe, events):
 				continue
-		var def: Dictionary = data.facilities[facility["type"]]
 		if job["progress"] < int(recipe["work_points"]):
-			job["progress"] += mini(int(facility["assigned"]), int(def["slots"])) * int(def["productivity_per_slot"])
+			job["progress"] += LayoutRules.work_rate(state, data, facility)
 		if job["progress"] >= int(recipe["work_points"]):
 			_finish_job(state, data, facility, job, recipe, events, rng)
 	return events
@@ -876,11 +956,16 @@ static func _resolve_finances(state: GameState, data: GameData, launch_costs := 
 		salaries = state.technicians_hired * int(data.staff["technician"]["technician_salary_per_day"])
 	var scrub_costs: int = launch_costs.get("scrub_costs", 0)
 	var refurb_costs: int = launch_costs.get("refurb_costs", 0)
+	var rollout_costs := state.pending_rollout_costs  # spec 008 R7
+	var repair_costs := state.pending_repair_costs    # spec 008 R5b
+	state.pending_rollout_costs = 0
+	state.pending_repair_costs = 0
 	var holding_fees := SupplyRules.holding_fees(state, data)  # spec 007 R6
 	var supply_penalties: int = supply_flows.get("penalties", 0)  # credit
-	state.money -= upkeep + salaries + scrub_costs + refurb_costs + holding_fees - supply_penalties
+	state.money -= upkeep + salaries + scrub_costs + refurb_costs + rollout_costs + repair_costs + holding_fees - supply_penalties
 	var events: Array = [_event("daily_costs", {"day": state.day, "upkeep": upkeep, "salaries": salaries,
 		"scrub_costs": scrub_costs, "refurb_costs": refurb_costs,
+		"rollout_costs": rollout_costs, "repair_costs": repair_costs,
 		"holding_fees": holding_fees, "supply_penalties": supply_penalties})]
 	if state.money < 0:
 		events.append(_event("negative_balance", {"money": state.money}))

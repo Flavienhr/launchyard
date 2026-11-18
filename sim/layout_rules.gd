@@ -68,9 +68,10 @@ static func _intersects(a: Dictionary, b: Dictionary) -> bool:
 		and int(a["y"]) < int(b["y"]) + int(b["h"]) and int(b["y"]) < int(a["y"]) + int(a["h"])
 
 
-## Spatial validity of a placement: {valid, reason, rect[, facility_id]}.
+## Spatial validity of a placement: {valid, reason, rect[, facility_id]} and,
+## when valid on a site with rules (spec 008 R9): in_safety_zone_of, served,
+## rollout (halls only), zone_contains (pads only).
 ## reason is "" when valid. Without map: always valid, rect {}.
-## (Zone, service and roll-out fields come with spec 008 R5 to R7.)
 static func placement_check(state: GameState, data: GameData, facility_type: String,
 		x: int, y: int, rotation: int) -> Dictionary:
 	if not data.has_map() or not data.facilities.get(facility_type, {}).has("footprint"):
@@ -83,7 +84,141 @@ static func placement_check(state: GameState, data: GameData, facility_type: Str
 	var blocker := overlapping_facility(state, data, rect)
 	if blocker != 0:
 		return {"valid": false, "reason": REASON_OVERLAP, "rect": rect, "facility_id": blocker}
-	return {"valid": true, "reason": "", "rect": rect}
+	var result := {"valid": true, "reason": "", "rect": rect}
+	if not rules_on(data):
+		return result
+	var def: Dictionary = data.facilities[facility_type]
+	result["in_safety_zone_of"] = zone_pad_ids(state, data, rect, 0)
+	result["served"] = not def.has("slots") or is_served(state, data, rect)
+	if def.has("launcher_capacity"):
+		var rollouts: Array = []
+		for facility in state.facilities:
+			if is_pad_instance(data, facility) and not instance_rect(data, facility).is_empty():
+				var gap := gap_cells(rect, instance_rect(data, facility))
+				rollouts.append({"pad_id": facility["id"], "rollout_days": rollout_days(data, gap),
+					"rollout_cost": rollout_cost(data, gap)})
+		result["rollout"] = rollouts
+	if def.has("safety_radius_cells"):
+		var contained: Array = []
+		for facility in state.facilities:
+			var other := instance_rect(data, facility)
+			if not other.is_empty() and gap_cells(rect, other) < int(def["safety_radius_cells"]):
+				contained.append(facility["id"])
+		result["zone_contains"] = contained
+	return result
+
+
+# --- Distance rules (spec 008 R5 to R7). Off without a map or without layout.json.
+
+static func rules_on(data: GameData) -> bool:
+	return data.has_map() and not data.layout.is_empty()
+
+
+static func is_pad_instance(data: GameData, facility: Dictionary) -> bool:
+	return data.facilities[facility["type"]].has("safety_radius_cells")
+
+
+## R5b: the facility is damaged during the resolution of day `state.day` while
+## `damaged_until_day > day`.
+static func is_damaged(state: GameState, facility: Dictionary) -> bool:
+	return int(facility.get("damaged_until_day", -1)) > state.day
+
+
+## R5: ids (ascending) of the pads, other than `ignore_id`, whose zone contains `rect`.
+static func zone_pad_ids(state: GameState, data: GameData, rect: Dictionary, ignore_id: int) -> Array:
+	var ids: Array = []
+	for facility in state.facilities:
+		if int(facility["id"]) == ignore_id or not is_pad_instance(data, facility):
+			continue
+		var pad_rect := instance_rect(data, facility)
+		if pad_rect.is_empty():
+			continue
+		if gap_cells(rect, pad_rect) < int(data.facilities[facility["type"]]["safety_radius_cells"]):
+			ids.append(facility["id"])
+	return ids
+
+
+## R5: instances (ascending id) other than the pad itself inside its zone.
+static func zone_contents(state: GameState, data: GameData, pad: Dictionary) -> Array:
+	var result: Array = []
+	var pad_rect := instance_rect(data, pad)
+	if pad_rect.is_empty():
+		return result
+	var radius := int(data.facilities[pad["type"]]["safety_radius_cells"])
+	for facility in state.facilities:
+		var rect := instance_rect(data, facility)
+		if facility["id"] != pad["id"] and not rect.is_empty() and gap_cells(rect, pad_rect) < radius:
+			result.append(facility)
+	return result
+
+
+## R6: a ready, undamaged warehouse within `service_radius_cells`.
+static func is_served(state: GameState, data: GameData, rect: Dictionary) -> bool:
+	var radius := int(data.layout["service_radius_cells"])
+	for facility in state.facilities:
+		if facility["status"] != "ready" or is_damaged(state, facility):
+			continue
+		if not data.facilities[facility["type"]].has("storage_capacity"):
+			continue
+		var other := instance_rect(data, facility)
+		if not other.is_empty() and gap_cells(rect, other) <= radius:
+			return true
+	return false
+
+
+## R6: work points per day of a ready instance with slots (unserved: reduced).
+static func work_rate(state: GameState, data: GameData, facility: Dictionary) -> int:
+	var def: Dictionary = data.facilities[facility["type"]]
+	var rate := mini(int(facility["assigned"]), int(def["slots"])) * int(def["productivity_per_slot"])
+	if rules_on(data):
+		var rect := instance_rect(data, facility)
+		if not rect.is_empty() and not is_served(state, data, rect):
+			rate = rate * int(data.layout["unserved_productivity_pct"]) / 100
+	return rate
+
+
+## R7.
+static func rollout_days(data: GameData, gap: int) -> int:
+	return int(data.layout["rollout_base_days"]) + gap / int(data.layout["rollout_cells_per_day"])
+
+
+static func rollout_cost(data: GameData, gap: int) -> int:
+	return int(data.layout["rollout_cost_per_cell"]) * gap
+
+
+## R5b: repair cost of an instance.
+static func repair_cost(data: GameData, facility: Dictionary) -> int:
+	return int(data.facilities[facility["type"]].get("build_cost", 0)) * int(data.layout["damage_repair_cost_pct"]) / 100
+
+
+## R9: spatial facts of an instance for display.
+static func facility_spatial(state: GameState, data: GameData, facility_id: int) -> Dictionary:
+	var facility := {}
+	for candidate in state.facilities:
+		if candidate["id"] == facility_id:
+			facility = candidate
+	var rect := {} if facility.is_empty() else instance_rect(data, facility)
+	if rect.is_empty() or not rules_on(data):
+		return {"served": true, "in_safety_zone_of": [], "damaged_until_day": -1, "evacuated_today": false}
+	var zone := zone_pad_ids(state, data, rect, facility_id)
+	var evacuated := false
+	if facility["status"] == "ready":
+		for pad_id in zone:
+			evacuated = evacuated or pad_fires_today(state, pad_id)
+	return {
+		"served": not data.facilities[facility["type"]].has("slots") or is_served(state, data, rect),
+		"in_safety_zone_of": zone,
+		"damaged_until_day": int(facility["damaged_until_day"]) if is_damaged(state, facility) else -1,
+		"evacuated_today": evacuated,
+	}
+
+
+## R5a: a launch is planned for today from this pad (weather not yet drawn).
+static func pad_fires_today(state: GameState, pad_id: int) -> bool:
+	for launch in state.launches:
+		if launch["pad_id"] == pad_id and launch["launch_day"] == state.day:
+			return true
+	return false
 
 
 ## First valid position of a facility type, scanning y then x, rotation 0 then 1.

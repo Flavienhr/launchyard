@@ -19,6 +19,10 @@ static func lot_list(state: GameState, data: GameData) -> Array:
 	return LayoutRules.lot_list(state, data)
 
 
+static func facility_spatial(state: GameState, data: GameData, facility_id: int) -> Dictionary:
+	return LayoutRules.facility_spatial(state, data, facility_id)
+
+
 ## Throughput (work points per day) of a facility instance.
 static func facility_rate(data: GameData, facility: Dictionary) -> int:
 	var def: Dictionary = data.facilities[facility["type"]]
