@@ -36,6 +36,8 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 
 
 const BUY_LOT := &"buy_lot"
+const MOVE_FACILITY := &"move_facility"
+const DEMOLISH_FACILITY := &"demolish_facility"
 
 ## Without x, y: no position (accepted on a site without map; auto-placed on a
 ## site with one, see Simulation._apply_build).
@@ -50,6 +52,14 @@ static func build(facility_type: String, x: Variant = null, y: Variant = null, r
 
 static func buy_lot(lot_id: String) -> Command:
 	return Command.new(BUY_LOT, {"lot_id": lot_id})
+
+
+static func move_facility(facility_id: int, x: int, y: int, rotation: int = 0) -> Command:
+	return Command.new(MOVE_FACILITY, {"facility_id": facility_id, "x": x, "y": y, "rotation": rotation})
+
+
+static func demolish_facility(facility_id: int) -> Command:
+	return Command.new(DEMOLISH_FACILITY, {"facility_id": facility_id})
 
 
 static func hire(count: int) -> Command:
