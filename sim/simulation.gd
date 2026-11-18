@@ -621,6 +621,8 @@ static func _start_job(state: GameState, data: GameData, facility: Dictionary,
 		var qty := int(recipe["inputs"][component_id])
 		state.stock[component_id] = int(state.stock.get(component_id, 0)) - qty
 		consumed[component_id] = qty
+	if recipe["output"].has("launcher_model"):
+		_add_stat(state, "kit_consumed", consumed)
 	job["started"] = true
 	job["blocked"] = ""
 	events.append(_event("job_started", {
@@ -657,6 +659,7 @@ static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
 				events.append(_event("output_blocked", {"job_id": job["id"], "facility_id": facility["id"]}))
 			return
 		state.stock[component_id] = int(state.stock.get(component_id, 0)) + qty
+		_add_stat(state, "components_made", {component_id: qty})
 	else:
 		var launcher := {
 			"id": state.next_launcher_id,
@@ -672,6 +675,12 @@ static func _finish_job(state: GameState, data: GameData, facility: Dictionary,
 	events.append(_event("job_completed", {
 		"job_id": job["id"], "output": output.duplicate(true), "scrap_rate": job["scrap_rate"],
 	}))
+
+
+## Spec 009 R3: adds {component_id: quantity} to a cumulative counter.
+static func _add_stat(state: GameState, counter: String, amounts: Dictionary) -> void:
+	for component_id in amounts:
+		state.stats[counter][component_id] = int(state.stats[counter].get(component_id, 0)) + int(amounts[component_id])
 
 
 static func _hall_has_room(state: GameState, data: GameData, facility: Dictionary) -> bool:

@@ -142,6 +142,7 @@ static func sign(state: GameState, data: GameData, args: Dictionary) -> Array:
 		"price_pct": price_pct(data, discount, pricing, priority),
 		"discount_pct": discount,
 		"skip_next": false,
+		"invoiced_total": 0,  # sum of the shipment invoices (spec 009 R3)
 		"status": ACTIVE,
 	}
 	var unit_price: Variant = null
@@ -223,6 +224,7 @@ static func _ship(state: GameState, data: GameData, contract: Dictionary, events
 	var unit_price := current_unit_price(state, data, contract)
 	var invoice := shipped * unit_price
 	state.money -= invoice  # even below zero: bankruptcy follows spec 004
+	contract["invoiced_total"] = int(contract.get("invoiced_total", 0)) + invoice
 	var order := {
 		"id": state.next_order_id,
 		"supplier_id": contract["supplier_id"],
