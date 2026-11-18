@@ -6,6 +6,14 @@ extends RefCounted
 const PERCENT := 100  # layout.json percentages are integers out of 100
 
 
+## Spec 008 R8: max(1, ceil(build_days x move_days_pct / 100)).
+## Integer ceil written (a + b - 1) / b: GDScript integer division truncates
+## toward zero, so the Python idiom -(-a // b) would round down here.
+static func move_days(data: GameData, def: Dictionary) -> int:
+	var scaled := int(def.get("build_days", 0)) * int(data.layout.get("move_days_pct", 0))
+	return maxi(1, (scaled + PERCENT - 1) / PERCENT)
+
+
 ## Spec 008 R8: busy = started job, hall holding a launcher, or pad that is
 ## occupied, refurbishing or targeted by a scheduled launch.
 static func is_busy(state: GameState, _data: GameData, facility: Dictionary) -> bool:
@@ -63,8 +71,7 @@ static func apply_move(state: GameState, args: Dictionary, data: GameData) -> Ar
 		return [Simulation._rejected("insufficient_funds", command)]
 
 	state.money -= cost
-	var scaled_days := int(def.get("build_days", 0)) * int(data.layout.get("move_days_pct", 0))
-	var days := maxi(1, -(-scaled_days / PERCENT))  # ceil
+	var days := move_days(data, def)
 	facility["status"] = "building"
 	facility["ready_day"] = state.day + days
 	facility["assigned"] = 0

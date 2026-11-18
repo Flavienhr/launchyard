@@ -104,13 +104,12 @@ static func move_info(state: GameState, data: GameData, facility_id: int) -> Dic
 			continue
 		var def: Dictionary = data.facilities[facility["type"]]
 		var cost: int = int(def.get("build_cost", 0)) * int(data.layout.get("move_cost_pct", 0)) / 100
-		var scaled: int = int(def.get("build_days", 0)) * int(data.layout.get("move_days_pct", 0))
 		return {
 			"exists": true,
 			"busy": FacilityMoves.is_busy(state, data, facility),
 			"storage_excess": FacilityMoves.storage_excess(state, data, facility),
 			"move_cost": cost,
-			"move_days": maxi(1, -(-scaled / 100)),
+			"move_days": FacilityMoves.move_days(data, def),
 			"refund": int(def.get("build_cost", 0)) * int(data.layout.get("demolish_refund_pct", 0)) / 100,
 			"can_afford_move": cost <= state.money,
 		}

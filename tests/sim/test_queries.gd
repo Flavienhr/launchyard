@@ -550,7 +550,7 @@ func test_move_info_matches_the_commands() -> void:
 	var info := SimQueries.move_info(s[0], s[1], shop["id"])
 	assert_eq(info["move_cost"], 250)
 	# Same arithmetic as FacilityMoves (it truncates instead of rounding up: 1.5 -> 1).
-	assert_eq(info["move_days"], 1)
+	assert_eq(info["move_days"], 2)  # 3 days x 50 % = 1.5, rounded up (spec 008 R8)
 	assert_eq(info["refund"], 200)
 	assert_eq(info["busy"], false)
 	var money: int = s[0].money
