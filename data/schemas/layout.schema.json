@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "service_radius_cells",
+    "unserved_productivity_pct",
+    "rollout_base_days",
+    "rollout_cells_per_day",
+    "rollout_cost_per_cell",
+    "damage_repair_days",
+    "damage_repair_cost_pct",
+    "move_cost_pct",
+    "move_days_pct",
+    "demolish_refund_pct"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_note": { "type": "string" },
+    "service_radius_cells": { "type": "integer", "minimum": 0 },
+    "unserved_productivity_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "rollout_base_days": { "type": "integer", "minimum": 0 },
+    "rollout_cells_per_day": { "type": "integer", "minimum": 1 },
+    "rollout_cost_per_cell": { "type": "integer", "minimum": 0 },
+    "damage_repair_days": { "type": "integer", "minimum": 0 },
+    "damage_repair_cost_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "move_cost_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "move_days_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "demolish_refund_pct": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}

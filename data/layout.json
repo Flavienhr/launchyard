@@ -1,0 +1,13 @@
+{
+  "_note": "Spec 008, Données : règles spatiales globales (R5 à R8).",
+  "service_radius_cells": 3,
+  "unserved_productivity_pct": 70,
+  "rollout_base_days": 1,
+  "rollout_cells_per_day": 6,
+  "rollout_cost_per_cell": 400,
+  "damage_repair_days": 10,
+  "damage_repair_cost_pct": 25,
+  "move_cost_pct": 25,
+  "move_days_pct": 50,
+  "demolish_refund_pct": 20
+}

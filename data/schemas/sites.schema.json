@@ -43,6 +43,46 @@
             "type": "array",
             "minItems": 1,
             "items": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "map": {
+            "type": "object",
+            "required": ["width", "height", "terrain", "lots"],
+            "additionalProperties": false,
+            "properties": {
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 },
+              "terrain": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["kind", "x", "y", "w", "h"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "type": "string", "enum": ["sea", "road"] },
+                    "x": { "type": "integer", "minimum": 0 },
+                    "y": { "type": "integer", "minimum": 0 },
+                    "w": { "type": "integer", "minimum": 1 },
+                    "h": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              },
+              "lots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "x", "y", "w", "h", "price"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                    "x": { "type": "integer", "minimum": 0 },
+                    "y": { "type": "integer", "minimum": 0 },
+                    "w": { "type": "integer", "minimum": 1 },
+                    "h": { "type": "integer", "minimum": 1 },
+                    "price": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              }
+            }
           }
         },
         "patternProperties": { "^_": {} }

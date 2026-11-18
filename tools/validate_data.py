@@ -282,6 +282,93 @@ def check_market(docs: dict, errors: list[str]) -> None:
             errors.append("supply_contracts.json: volume_discount_tiers non triés par min_value croissant")
 
 
+def overlaps(a: dict, b: dict) -> bool:
+    """Deux rectangles {x, y, w, h} se recouvrent-ils (au moins une case commune) ?"""
+    return a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"] \
+        and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"]
+
+
+def cells(rect: dict) -> set[tuple[int, int]]:
+    return {(x, y) for x in range(rect["x"], rect["x"] + rect["w"])
+            for y in range(rect["y"], rect["y"] + rect["h"])}
+
+
+def check_spatial(docs: dict, errors: list[str]) -> None:
+    """Carte, parcelles, emprises et positions de départ (spec 008, Schémas et validateur)."""
+    facility_by_id = {
+        f["id"]: f for f in docs.get("facilities", {}).get("facilities", [])
+        if isinstance(f, dict) and "id" in f
+    }
+    maps: dict[str, dict] = {
+        s["id"]: s["map"] for s in docs.get("sites", {}).get("sites", []) if "map" in s
+    }
+
+    for sid, site_map in maps.items():
+        width, height = site_map["width"], site_map["height"]
+        lots = site_map["lots"]
+        lot_ids = [lot["id"] for lot in lots]
+        for dup in sorted({i for i in lot_ids if lot_ids.count(i) > 1}):
+            errors.append(f"sites.json: {sid} : parcelle dupliquée '{dup}'")
+        for rect in lots + site_map["terrain"]:
+            if rect["x"] + rect["w"] > width or rect["y"] + rect["h"] > height:
+                errors.append(f"sites.json: {sid} : '{rect.get('id', rect.get('kind'))}' sort de la carte")
+        for i, a in enumerate(lots):
+            for b in lots[i + 1:]:
+                if overlaps(a, b):
+                    errors.append(f"sites.json: {sid} : parcelles '{a['id']}' et '{b['id']}' se recouvrent")
+            for t in site_map["terrain"]:
+                if overlaps(a, t):
+                    errors.append(f"sites.json: {sid} : parcelle '{a['id']}' recouvre le terrain '{t['kind']}'")
+
+    # Une carte rend l'emprise obligatoire pour chaque type d'installation.
+    if maps:
+        for fid, facility in facility_by_id.items():
+            if "footprint" not in facility:
+                errors.append(f"facilities.json: {fid} n'a pas de footprint (site avec carte)")
+
+    start = docs.get("start", {})
+    site_id = start.get("site")
+    owned = start.get("owned_lots", [])
+    positions = start.get("facility_positions", [])
+    if "facility_positions" in start and sorted(p["facility_type"] for p in positions) != sorted(start.get("facilities", [])):
+        errors.append("start.json: facility_positions ne correspond pas à facilities")
+
+    if site_id not in maps:
+        if owned:
+            errors.append(f"start.json: owned_lots sans carte pour le site '{site_id}'")
+        return
+
+    site_map = maps[site_id]
+    lot_by_id = {lot["id"]: lot for lot in site_map["lots"]}
+    for lot_id in owned:
+        if lot_id not in lot_by_id:
+            errors.append(f"start.json: parcelle inconnue '{lot_id}'")
+    owned_cells: set[tuple[int, int]] = set()
+    for lot_id in owned:
+        if lot_id in lot_by_id:
+            owned_cells |= cells(lot_by_id[lot_id])
+
+    for start_fid in start.get("facilities", []):
+        if start_fid not in [p["facility_type"] for p in positions]:
+            errors.append(f"start.json: installation de départ '{start_fid}' sans position")
+
+    placed: list[tuple[str, dict]] = []
+    for pos in positions:
+        ftype = pos["facility_type"]
+        footprint = facility_by_id.get(ftype, {}).get("footprint")
+        if footprint is None:
+            errors.append(f"start.json: installation '{ftype}' sans footprint")
+            continue
+        w, h = (footprint[1], footprint[0]) if pos["rotation"] == 1 else (footprint[0], footprint[1])
+        rect = {"x": pos["x"], "y": pos["y"], "w": w, "h": h}
+        if not cells(rect) <= owned_cells:
+            errors.append(f"start.json: '{ftype}' en ({pos['x']}, {pos['y']}) hors des parcelles possédées")
+        for other_type, other in placed:
+            if overlaps(rect, other):
+                errors.append(f"start.json: '{ftype}' chevauche '{other_type}'")
+        placed.append((ftype, rect))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true", help="liste les fichiers validés")
@@ -291,6 +378,7 @@ def main() -> int:
     docs = check_schemas(errors)
     check_references(docs, errors)
     check_market(docs, errors)
+    check_spatial(docs, errors)
 
     if args.verbose:
         for name in docs:
