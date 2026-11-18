@@ -7,12 +7,12 @@ const NET_CASH := "net_cash"
 const REPUTATION := "reputation"
 const IN_HOUSE_SHARE_PCT := "in_house_share_pct"
 const SUPPLY_COMPLETED_VALUE := "supply_completed_value"
+const SITE_VIOLATIONS := "site_violations"
 ## Percent denominator of in_house_share_pct (a unit, not a balance value).
 const PCT := 100
 
 
-## Value of a metric. `site_violations` (spec 009 R4b) belongs to a later issue (#85):
-## until then, like any unknown metric, it returns 0.
+## Value of a metric. Unknown metrics return 0.
 static func metric_value(state: GameState, data: GameData, metric_id: String) -> int:
 	match metric_id:
 		CONTRACTS_COMPLETED:
@@ -25,6 +25,8 @@ static func metric_value(state: GameState, data: GameData, metric_id: String) ->
 			return in_house_share_pct(state, data)
 		SUPPLY_COMPLETED_VALUE:
 			return _supply_completed_value(state)
+		SITE_VIOLATIONS:
+			return site_violations(state, data)
 	return 0
 
 
@@ -78,3 +80,26 @@ static func in_house_share_pct(state: GameState, data: GameData) -> int:
 	if total_value == 0:
 		return 0
 	return PCT * credited_value / total_value
+
+
+## R4b: infractions of the site. Every instance except the pads, with status
+## `ready` or `building`, counts once if it is in the safety zone of at least
+## one pad, and once more if it is `ready`, has `slots` and is not served.
+## Without rules (no map) the site has no violation: 0. Spatial facts come from
+## LayoutRules.facility_spatial (spec 008), not recomputed here.
+static func site_violations(state: GameState, data: GameData) -> int:
+	if not LayoutRules.rules_on(data):
+		return 0
+	var count := 0
+	for facility in state.facilities:
+		var status: String = facility["status"]
+		if LayoutRules.is_pad_instance(data, facility):
+			continue
+		if status != "ready" and status != "building":
+			continue
+		var spatial := LayoutRules.facility_spatial(state, data, int(facility["id"]))
+		if not spatial["in_safety_zone_of"].is_empty():
+			count += 1
+		if status == "ready" and not spatial["served"]:
+			count += 1
+	return count

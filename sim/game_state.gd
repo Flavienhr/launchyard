@@ -37,6 +37,9 @@ var pending_repair_costs: int = 0   # recorded at step 5, debited at step 8, spe
 ## components_made[component_id] = parts that actually entered the stock.
 var stats: Dictionary = empty_stats()
 
+## Level state (spec 009 R2): {id, status, stars, star_days, end_day, end_reason}.
+var level: Dictionary = LevelRules.empty_state()
+
 
 static func empty_stats() -> Dictionary:
 	return {"kit_consumed": {}, "components_made": {}}
@@ -73,6 +76,7 @@ func to_dict() -> Dictionary:
 		"pending_rollout_costs": pending_rollout_costs,
 		"pending_repair_costs": pending_repair_costs,
 		"stats": stats.duplicate(true),
+		"level": level.duplicate(true),
 	}
 
 
@@ -150,6 +154,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.pending_rollout_costs = int(d.get("pending_rollout_costs", 0))
 	s.pending_repair_costs = int(d.get("pending_repair_costs", 0))
 	s.stats = _stats_from_dict(d.get("stats", empty_stats()))
+	s.level = LevelRules.from_dict(d.get("level", LevelRules.empty_state()))
 	return s
 
 
