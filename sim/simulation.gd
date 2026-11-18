@@ -58,6 +58,10 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_build(state, command.args, data)
 		Command.BUY_LOT:
 			return _apply_buy_lot(state, command.args, data)
+		Command.MOVE_FACILITY:
+			return FacilityMoves.apply_move(state, command.args, data)
+		Command.DEMOLISH_FACILITY:
+			return FacilityMoves.apply_demolish(state, command.args, data)
 		Command.HIRE:
 			return _apply_hire(state, command.args, data)
 		Command.FIRE:
@@ -682,7 +686,9 @@ static func _resolve_constructions(state: GameState) -> Array:
 			facility["status"] = "ready"
 			events.append(_event("facility_built", {
 				"facility_id": facility["id"], "facility_type": facility["type"],
+				"moved": bool(facility.get("moving", false)),
 			}))
+			facility.erase("moving")
 	return events
 
 

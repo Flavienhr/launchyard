@@ -29,6 +29,8 @@ def load(path: Path, errors: list[str]) -> dict | None:
 def check_schemas(errors: list[str]) -> dict[str, dict]:
     docs: dict[str, dict] = {}
     for path in sorted(DATA.glob("*.json")):
+        if path.name == "start.json":
+            continue  # signalé par check_levels
         schema_path = SCHEMAS / f"{path.stem}.schema.json"
         if not schema_path.exists():
             errors.append(f"{path.name}: aucun schéma ({schema_path.relative_to(ROOT)})")
@@ -176,26 +178,26 @@ def check_references(docs: dict, errors: list[str]) -> None:
     if rules and rules.get("bankruptcy_warning_days", 0) >= rules.get("bankruptcy_grace_days", 0):
         errors.append("rules.json: bankruptcy_warning_days doit être < bankruptcy_grace_days")
 
-    start = docs.get("start", {})
     site_ids = {s.get("id") for s in docs.get("sites", {}).get("sites", [])}
-    if "site" in start and start["site"] not in site_ids:
-        errors.append(f"start.json: site inconnu '{start['site']}'")
-    start_types = [f["facility_type"] for f in start.get("facilities", [])]
-    for facility_id in start_types:
-        if facility_id not in facilities:
-            errors.append(f"start.json: installation inconnue '{facility_id}'")
-    for facility_id, count in start.get("assignments", {}).items():
-        if facility_id not in start_types:
-            errors.append(f"start.json: affectation sur une installation absente des départs '{facility_id}'")
-            continue
-        slots = facility_by_id.get(facility_id, {}).get("slots", 0)
-        if count > slots:
-            errors.append(
-                f"start.json: {count} techniciens affectés à '{facility_id}' "
-                f"qui n'a que {slots} postes")
-    total = sum(start.get("assignments", {}).values())
-    if "technicians" in start and total > start["technicians"]:
-        errors.append(f"start.json: {total} techniciens affectés pour {start['technicians']} embauchés")
+    for level in docs.get("levels", {}).get("levels", []):
+        where = f"levels.json: {level.get('id')}"
+        start = level.get("start", {})
+        if level.get("site") not in site_ids:
+            errors.append(f"{where}: site inconnu '{level.get('site')}'")
+        start_types = [f["facility_type"] for f in start.get("facilities", [])]
+        for facility_id in start_types:
+            if facility_id not in facilities:
+                errors.append(f"{where}: installation inconnue '{facility_id}'")
+        for facility_id, count in start.get("assignments", {}).items():
+            if facility_id not in start_types:
+                errors.append(f"{where}: affectation sur une installation absente des départs '{facility_id}'")
+                continue
+            slots = facility_by_id.get(facility_id, {}).get("slots", 0)
+            if count > slots:
+                errors.append(f"{where}: {count} techniciens affectés à '{facility_id}' qui n'a que {slots} postes")
+        total = sum(start.get("assignments", {}).values())
+        if "technicians" in start and total > start["technicians"]:
+            errors.append(f"{where}: {total} techniciens affectés pour {start['technicians']} embauchés")
 
     # Prérequis de construction (spec 006, R3) : types référencés, puis absence de cycle.
     for fid, facility in facility_by_id.items():
@@ -327,21 +329,28 @@ def check_spatial(docs: dict, errors: list[str]) -> None:
             if "footprint" not in facility:
                 errors.append(f"facilities.json: {fid} n'a pas de footprint (site avec carte)")
 
-    start = docs.get("start", {})
-    site_id = start.get("site")
+    for level in docs.get("levels", {}).get("levels", []):
+        _check_level_start(level, maps, facility_by_id, errors)
+
+
+def _check_level_start(level: dict, maps: dict, facility_by_id: dict, errors: list[str]) -> None:
+    """Parcelles et positions de départ d'un niveau (spec 008 + 009)."""
+    start = level.get("start", {})
+    where = f"levels.json: {level.get('id')}"
+    site_id = level.get("site")
     owned = start.get("owned_lots", [])
     positions = start.get("facilities", [])
 
     if site_id not in maps:
         if owned:
-            errors.append(f"start.json: owned_lots sans carte pour le site '{site_id}'")
+            errors.append(f"{where}: owned_lots sans carte pour le site '{site_id}'")
         return
 
     site_map = maps[site_id]
     lot_by_id = {lot["id"]: lot for lot in site_map["lots"]}
     for lot_id in owned:
         if lot_id not in lot_by_id:
-            errors.append(f"start.json: parcelle inconnue '{lot_id}'")
+            errors.append(f"{where}: parcelle inconnue '{lot_id}'")
     owned_cells: set[tuple[int, int]] = set()
     for lot_id in owned:
         if lot_id in lot_by_id:
@@ -352,16 +361,76 @@ def check_spatial(docs: dict, errors: list[str]) -> None:
         ftype = pos["facility_type"]
         footprint = facility_by_id.get(ftype, {}).get("footprint")
         if footprint is None:
-            errors.append(f"start.json: installation '{ftype}' sans footprint")
+            errors.append(f"{where}: installation '{ftype}' sans footprint")
             continue
         w, h = (footprint[1], footprint[0]) if pos["rotation"] == 1 else (footprint[0], footprint[1])
         rect = {"x": pos["x"], "y": pos["y"], "w": w, "h": h}
         if not cells(rect) <= owned_cells:
-            errors.append(f"start.json: '{ftype}' en ({pos['x']}, {pos['y']}) hors des parcelles possédées")
+            errors.append(f"{where}: '{ftype}' en ({pos['x']}, {pos['y']}) hors des parcelles possédées")
         for other_type, other in placed:
             if overlaps(rect, other):
-                errors.append(f"start.json: '{ftype}' chevauche '{other_type}'")
+                errors.append(f"{where}: '{ftype}' chevauche '{other_type}'")
         placed.append((ftype, rect))
+
+
+def check_levels(docs: dict, errors: list[str]) -> None:
+    """Niveaux (spec 009) : unicité, déblocage, objectifs, paliers. Le départ est vu ailleurs."""
+    if (DATA / "start.json").exists():
+        errors.append("start.json: ce fichier est remplacé par levels.json et ne doit plus exister")
+    levels = docs.get("levels", {}).get("levels", [])
+    level_ids = ids(docs, "levels", errors)
+    default = docs.get("levels", {}).get("default_level")
+    if levels and default not in level_ids:
+        errors.append(f"levels.json: default_level inconnu '{default}'")
+    orders = [lv.get("order") for lv in levels]
+    for dup in sorted({o for o in orders if orders.count(o) > 1}):
+        errors.append(f"levels.json: order dupliqué {dup}")
+
+    maps = {s.get("id"): s.get("map") for s in docs.get("sites", {}).get("sites", [])}
+    catalogued = {
+        e.get("component_id")
+        for sup in docs.get("suppliers", {}).get("suppliers", []) for e in sup.get("catalog", [])
+    }
+    kit = {
+        c for r in docs.get("recipes", {}).get("recipes", [])
+        if "launcher_model" in r.get("output", {}) for c in r.get("inputs", {})
+    }
+
+    for level in levels:
+        where = f"levels.json: {level.get('id')}"
+        req = level.get("unlock", {}).get("requires_level")
+        if req is not None and (req not in level_ids or req == level.get("id")):
+            errors.append(f"{where}: unlock.requires_level invalide '{req}'")
+        duration = level.get("duration_days", 0)
+        for warn in level.get("time_warnings_days", []):
+            if duration and warn >= duration:
+                errors.append(f"{where}: time_warnings_days {warn} >= duration_days {duration}")
+        seen: set[str] = set()
+        metrics: set[str] = set()
+        last_target: dict[str, int] = {}
+        for n, star in enumerate(level.get("stars", []), start=1):
+            if not star.get("objectives"):
+                errors.append(f"{where}: l'étoile {n} n'a aucun objectif requis")
+            any_of = star.get("any_of")
+            if any_of and any_of["min_met"] > len(any_of["objectives"]):
+                errors.append(f"{where}: étoile {n}: any_of.min_met > nombre d'objectifs du bloc")
+            grouped = star.get("objectives", []) + (any_of["objectives"] if any_of else [])
+            for obj in grouped:
+                if obj["id"] in seen:
+                    errors.append(f"{where}: objectif dupliqué '{obj['id']}'")
+                seen.add(obj["id"])
+                metrics.add(obj["metric"])
+            for obj in star.get("objectives", []):
+                if obj["op"] != "gte":
+                    continue
+                if obj["target"] < last_target.get(obj["metric"], obj["target"]):
+                    errors.append(f"{where}: cible gte de '{obj['metric']}' décroissante à l'étoile {n}")
+                last_target[obj["metric"]] = obj["target"]
+        if "in_house_share_pct" in metrics:
+            for comp in sorted(kit - catalogued):
+                errors.append(f"{where}: in_house_share_pct : '{comp}' (kit de lanceur) sans entrée de catalogue")
+        if "site_violations" in metrics and not maps.get(level.get("site")):
+            errors.append(f"{where}: site_violations demande un site avec carte ('{level.get('site')}')")
 
 
 def main() -> int:
@@ -374,6 +443,7 @@ def main() -> int:
     check_references(docs, errors)
     check_market(docs, errors)
     check_spatial(docs, errors)
+    check_levels(docs, errors)
 
     if args.verbose:
         for name in docs:

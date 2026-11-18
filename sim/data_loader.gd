@@ -9,6 +9,8 @@ const DATA_DIR := "res://data"
 static func load_default() -> GameData:
 	var files := {}
 	for stem in GameData.INDEXED_FILES + GameData.WHOLE_FILES:
+		if stem == "start":
+			continue  # replaced by levels.json (spec 009)
 		files[stem] = _read(stem + ".json")
 	return GameData.from_files(files)
 
