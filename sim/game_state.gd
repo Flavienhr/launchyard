@@ -30,6 +30,15 @@ var supply_contracts: Array = [] # see SupplyRules, spec 007 R4
 var next_supply_contract_id: int = 1
 var owned_lots: Array = []     # lot ids bought or owned at start, spec 008 R1
 
+## Cumulative counters, kept in every game (spec 009 R3):
+## kit_consumed[component_id] = parts consumed by jobs whose recipe makes a launcher (at job_started),
+## components_made[component_id] = parts that actually entered the stock.
+var stats: Dictionary = empty_stats()
+
+
+static func empty_stats() -> Dictionary:
+	return {"kit_consumed": {}, "components_made": {}}
+
 
 func to_dict() -> Dictionary:
 	return {
@@ -59,6 +68,7 @@ func to_dict() -> Dictionary:
 		"supply_contracts": supply_contracts.duplicate(true),
 		"next_supply_contract_id": next_supply_contract_id,
 		"owned_lots": owned_lots.duplicate(),
+		"stats": stats.duplicate(true),
 	}
 
 
@@ -126,12 +136,23 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.supply_contracts = d.get("supply_contracts", []).duplicate(true)
 	for contract in s.supply_contracts:
 		for key in ["id", "quantity", "period_days", "deliveries", "deliveries_done", "next_delivery_day",
-				"price_pct", "discount_pct", "contract_unit_price"]:
+				"price_pct", "discount_pct", "contract_unit_price", "invoiced_total"]:
 			if contract.has(key):
 				contract[key] = int(contract[key])
+		contract["invoiced_total"] = int(contract.get("invoiced_total", 0))
 	s.next_supply_contract_id = int(d.get("next_supply_contract_id", 1))
 	s.owned_lots = d.get("owned_lots", []).duplicate()
+	s.stats = _stats_from_dict(d.get("stats", empty_stats()))
 	return s
+
+
+## JSON turns ints into floats: recast every counter.
+static func _stats_from_dict(d: Dictionary) -> Dictionary:
+	var out := empty_stats()
+	for key in out:
+		for id in d.get(key, {}):
+			out[key][id] = int(d[key][id])
+	return out
 
 
 ## JSON turns ints into floats: recast every number of the market state.
