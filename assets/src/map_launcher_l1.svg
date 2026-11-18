@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 64">
+  <!-- Lanceur L1 1x2 vu de dessus (couché, nez au nord) : fuseau, ailerons, tuyère (accent lancement). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <path d="M16 4 L22 14 V52 H10 V14 Z"/>
+    <path d="M10 44 L4 58 L10 54 Z M22 44 L28 58 L22 54 Z"/>
+    <line x1="10" y1="22" x2="22" y2="22" stroke-width="1"/>
+    <line x1="10" y1="36" x2="22" y2="36" stroke-width="1"/>
+  </g>
+  <g id="accent" fill="none" stroke="#FFB547" stroke-width="2" stroke-linejoin="round">
+    <path d="M12 52 L11 60 H21 L20 52"/>
+  </g>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Sol possédé : aplat panneau, grille fine. -->
+  <g id="body">
+    <rect x="0" y="0" width="32" height="32" fill="#101A26"/>
+    <path d="M0 0.5 H32 M0.5 0 V32" fill="none" stroke="#1E3A52" stroke-width="1"/>
+  </g>
+</svg>

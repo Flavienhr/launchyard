@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- Atelier composites 3x3 : halle et autoclave rond (accent production). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <rect x="4" y="4" width="88" height="88" rx="2"/>
+    <line x1="4" y1="16" x2="92" y2="16" stroke-width="1" stroke="#1E3A52"/>
+    <line x1="4" y1="80" x2="92" y2="80" stroke-width="1" stroke="#1E3A52"/>
+  </g>
+  <g id="accent" fill="#101A26" stroke="#5BE49B" stroke-width="2" stroke-linejoin="round">
+    <circle cx="48" cy="48" r="28"/>
+    <circle cx="48" cy="48" r="18" stroke-width="1"/>
+    <line x1="48" y1="20" x2="48" y2="76" stroke-width="1"/>
+    <line x1="20" y1="48" x2="76" y2="48" stroke-width="1"/>
+  </g>
+</svg>

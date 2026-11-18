@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Installation endommagée : pastille panneau, éclair de fissure (danger). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <circle cx="32" cy="32" r="26"/>
+  </g>
+  <g id="accent" fill="none" stroke="#FF5C6C" stroke-width="2" stroke-linejoin="round">
+    <path d="M36 14 L24 34 H34 L28 50"/>
+  </g>
+</svg>

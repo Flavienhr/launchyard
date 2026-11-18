@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64">
+  <!-- Labo avionique 3x2 : bâtiment bas, toit en grille de modules (accent production). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <rect x="4" y="4" width="88" height="56" rx="2"/>
+    <rect x="12" y="12" width="72" height="40" stroke-width="1" stroke="#1E3A52"/>
+  </g>
+  <g id="accent" fill="none" stroke="#5BE49B" stroke-width="1" stroke-linejoin="round">
+    <rect x="16" y="16" width="16" height="14"/>
+    <rect x="40" y="16" width="16" height="14"/>
+    <rect x="64" y="16" width="16" height="14"/>
+    <rect x="16" y="34" width="16" height="14"/>
+    <rect x="40" y="34" width="16" height="14"/>
+    <rect x="64" y="34" width="16" height="14"/>
+  </g>
+</svg>
