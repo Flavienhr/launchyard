@@ -34,7 +34,14 @@ def lint(path: Path, colors: set[str]) -> list[str]:
     except ET.ParseError as exc:
         return [f"{rel}: XML invalide ({exc})"]
     view_box = root.get("viewBox", "").split()
-    if len(view_box) != 4 or view_box[2] != view_box[3] or float(view_box[2]) % 32:
+    try:
+        width, height = float(view_box[2]), float(view_box[3])
+    except (IndexError, ValueError):
+        width = height = 0.0
+    if path.name.startswith("map_"):
+        if not width or not height or width % 32 or height % 32:
+            problems.append(f"{rel}: viewBox map_ : largeur et hauteur multiples de 32 requises (actuel : '{root.get('viewBox')}')")
+    elif not width or width != height or width % 32:
         problems.append(f"{rel}: viewBox carré multiple de 32 requis (actuel : '{root.get('viewBox')}')")
     for tag in ("text", "image", "script", "foreignObject"):
         if next(root.iter(NS + tag), None) is not None:

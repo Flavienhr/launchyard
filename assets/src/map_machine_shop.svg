@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 96">
+  <!-- Atelier d'usinage 4x3 : halle et pont roulant sur ses rails (accent production). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <rect x="4" y="4" width="120" height="88" rx="2"/>
+    <rect x="22" y="40" width="22" height="26" stroke-width="1" stroke="#1E3A52"/>
+    <rect x="84" y="40" width="22" height="26" stroke-width="1" stroke="#1E3A52"/>
+  </g>
+  <g id="accent" fill="none" stroke="#5BE49B" stroke-width="2" stroke-linejoin="round">
+    <line x1="12" y1="12" x2="116" y2="12" stroke-width="1"/>
+    <line x1="12" y1="84" x2="116" y2="84" stroke-width="1"/>
+    <line x1="72" y1="12" x2="72" y2="84"/>
+    <rect x="64" y="42" width="16" height="12" fill="#101A26"/>
+  </g>
+</svg>

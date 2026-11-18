@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 96">
+  <!-- Atelier réservoirs 4x3 : halle et deux réservoirs couchés (accent production). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <rect x="4" y="4" width="120" height="88" rx="2"/>
+    <line x1="4" y1="16" x2="124" y2="16" stroke-width="1" stroke="#1E3A52"/>
+    <line x1="4" y1="80" x2="124" y2="80" stroke-width="1" stroke="#1E3A52"/>
+  </g>
+  <g id="accent" fill="#101A26" stroke="#5BE49B" stroke-width="2" stroke-linejoin="round">
+    <rect x="14" y="24" width="100" height="22" rx="11"/>
+    <rect x="14" y="50" width="100" height="22" rx="11"/>
+    <line x1="44" y1="24" x2="44" y2="46" stroke-width="1"/>
+    <line x1="84" y1="24" x2="84" y2="46" stroke-width="1"/>
+    <line x1="44" y1="50" x2="44" y2="72" stroke-width="1"/>
+    <line x1="84" y1="50" x2="84" y2="72" stroke-width="1"/>
+  </g>
+</svg>

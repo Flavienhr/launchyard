@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Sol à vendre : fond sombre, hachures diagonales. -->
+  <g id="body">
+    <rect x="0" y="0" width="32" height="32" fill="#0B1119"/>
+    <path d="M0 0.5 H32 M0.5 0 V32" fill="none" stroke="#1E3A52" stroke-width="1"/>
+    <path d="M0 16 L16 0 M0 32 L32 0 M16 32 L32 16" fill="none" stroke="#7A8FA3" stroke-width="1"/>
+  </g>
+</svg>

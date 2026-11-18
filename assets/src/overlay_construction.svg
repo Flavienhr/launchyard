@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Chantier : échafaudage (cadre, croix, tubes), posé en mosaïque sur l'emprise. -->
+  <g id="accent" fill="none" stroke="#FFB547" stroke-width="1" stroke-linejoin="round">
+    <rect x="2" y="2" width="28" height="28"/>
+    <line x1="2" y1="2" x2="30" y2="30"/>
+    <line x1="30" y1="2" x2="2" y2="30"/>
+    <line x1="2" y1="16" x2="30" y2="16"/>
+    <line x1="16" y1="2" x2="16" y2="30"/>
+  </g>
+</svg>
