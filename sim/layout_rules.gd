@@ -224,14 +224,29 @@ static func pad_fires_today(state: GameState, pad_id: int) -> bool:
 ## First valid position of a facility type, scanning y then x, rotation 0 then 1.
 ## Returns {x, y, rotation}, or {} if none. Provisional rule for callers that
 ## give no position (UI and bot until they choose one themselves).
+## Provisional auto-placement for a build without position (until the UI #79
+## and the bot #81 choose positions). Deterministic scan by y, then x, then
+## rotation. Prefers, in order: valid, outside every safety zone and served;
+## then valid and outside every zone; then any valid position.
 static func first_valid_position(state: GameState, data: GameData, facility_type: String) -> Dictionary:
 	var site_map := data.site_map()
+	var safe := {}
+	var any := {}
 	for y in int(site_map["height"]):
 		for x in int(site_map["width"]):
 			for rotation in 2:
-				if placement_check(state, data, facility_type, x, y, rotation)["valid"]:
-					return {"x": x, "y": y, "rotation": rotation}
-	return {}
+				var check := placement_check(state, data, facility_type, x, y, rotation)
+				if not check["valid"]:
+					continue
+				var position := {"x": x, "y": y, "rotation": rotation}
+				var in_zone: bool = not check.get("in_safety_zone_of", []).is_empty()
+				if not in_zone and check.get("served", true):
+					return position
+				if not in_zone and safe.is_empty():
+					safe = position
+				if any.is_empty():
+					any = position
+	return safe if not safe.is_empty() else any
 
 
 ## Lots for display: [{id, x, y, w, h, price, owned}], file order.
