@@ -1,0 +1,139 @@
+{
+  "default_level": "pointe_sternes_1",
+  "levels": [
+    {
+      "id": "pointe_sternes_1",
+      "name": "Pointe des Sternes",
+      "briefing": "Première base, premiers clients. Tu as 240 jours.",
+      "site": "pointe_sternes",
+      "order": 1,
+      "unlock": {
+        "requires_level": null,
+        "min_stars": 0
+      },
+      "duration_days": 240,
+      "time_warnings_days": [
+        30,
+        7
+      ],
+      "start": {
+        "money": 200000,
+        "technicians": 4,
+        "owned_lots": [
+          "lot_start"
+        ],
+        "facilities": [
+          {
+            "facility_type": "warehouse",
+            "x": 10,
+            "y": 14,
+            "rotation": 0
+          },
+          {
+            "facility_type": "integration_hall",
+            "x": 10,
+            "y": 8,
+            "rotation": 0
+          },
+          {
+            "facility_type": "launch_pad",
+            "x": 22,
+            "y": 10,
+            "rotation": 0
+          }
+        ],
+        "assignments": {
+          "integration_hall": 4
+        }
+      },
+      "stars": [
+        {
+          "name": "Mise en service",
+          "objectives": [
+            {
+              "id": "s1_contracts",
+              "metric": "contracts_completed",
+              "op": "gte",
+              "target": 5
+            },
+            {
+              "id": "s1_cash",
+              "metric": "net_cash",
+              "op": "gte",
+              "target": 300000
+            }
+          ]
+        },
+        {
+          "name": "Montée en cadence",
+          "objectives": [
+            {
+              "id": "s2_contracts",
+              "metric": "contracts_completed",
+              "op": "gte",
+              "target": 10
+            },
+            {
+              "id": "s2_cash",
+              "metric": "net_cash",
+              "op": "gte",
+              "target": 750000
+            }
+          ],
+          "any_of": {
+            "min_met": 1,
+            "objectives": [
+              {
+                "id": "s2_in_house",
+                "metric": "in_house_share_pct",
+                "op": "gte",
+                "target": 15
+              },
+              {
+                "id": "s2_supply",
+                "metric": "supply_completed_value",
+                "op": "gte",
+                "target": 60000
+              }
+            ]
+          }
+        },
+        {
+          "name": "Maîtrise industrielle",
+          "objectives": [
+            {
+              "id": "s3_contracts",
+              "metric": "contracts_completed",
+              "op": "gte",
+              "target": 14
+            },
+            {
+              "id": "s3_cash",
+              "metric": "net_cash",
+              "op": "gte",
+              "target": 1600000
+            },
+            {
+              "id": "s3_in_house",
+              "metric": "in_house_share_pct",
+              "op": "gte",
+              "target": 45
+            },
+            {
+              "id": "s3_supply",
+              "metric": "supply_completed_value",
+              "op": "gte",
+              "target": 200000
+            },
+            {
+              "id": "s3_site",
+              "metric": "site_violations",
+              "op": "lte",
+              "target": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
