@@ -183,6 +183,8 @@ func play(days: int) -> void:
 		if not events.is_empty() and events[0]["type"] == "facility_build_started":
 			_workshop_id = int(events[0]["facility_id"])
 	while state.day < days and not state.game_over:
+		if LevelRules.is_ended(state):  # temporary until #87: the bot plays on in free play
+			_apply(Command.continue_free_play())
 		_flush_backlog()
 		if is_contract(strategy):
 			_manage_supply_contracts()
