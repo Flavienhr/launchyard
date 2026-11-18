@@ -17,6 +17,7 @@ const ACCEPT_CONTRACT := &"accept_contract"
 const SIGN_SUPPLY_CONTRACT := &"sign_supply_contract"
 const SKIP_SUPPLY_DELIVERY := &"skip_supply_delivery"
 const TERMINATE_SUPPLY_CONTRACT := &"terminate_supply_contract"
+const CONTINUE_FREE_PLAY := &"continue_free_play"
 
 var type: StringName
 var args: Dictionary
@@ -110,6 +111,10 @@ static func sign_supply_contract(supplier_id: String, component_id: String, quan
 		"supplier_id": supplier_id, "component_id": component_id, "quantity": quantity,
 		"period_days": period_days, "deliveries": deliveries, "pricing": pricing, "priority": priority,
 	})
+
+
+static func continue_free_play() -> Command:
+	return Command.new(CONTINUE_FREE_PLAY)
 
 
 static func skip_supply_delivery(contract_id: int) -> Command:
