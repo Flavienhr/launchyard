@@ -13,8 +13,15 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 	var state := GameState.new()
 	state.game_seed = game_seed
 	state.money = int(data.start["money"])
-	for type in data.start["facilities"]:
-		state.facilities.append(_new_facility(state, type, "ready", state.day, data))
+	state.owned_lots = data.start.get("owned_lots", []).duplicate()
+	for entry in data.start["facilities"]:
+		# Entry: a type id (no position, fixtures) or {facility_type, x, y, rotation} (spec 008).
+		if entry is Dictionary:
+			var instance := _new_facility(state, entry["facility_type"], "ready", state.day, data)
+			_set_position(instance, int(entry["x"]), int(entry["y"]), int(entry["rotation"]))
+			state.facilities.append(instance)
+		else:
+			state.facilities.append(_new_facility(state, entry, "ready", state.day, data))
 	state.technicians_hired = int(data.start.get("technicians", 0))
 	var assignments: Dictionary = data.start.get("assignments", {})
 	for type in assignments:
@@ -49,6 +56,8 @@ static func apply_command(state: GameState, command: Command, data: GameData) ->
 			return _apply_order(state, command.args, data)
 		Command.BUILD:
 			return _apply_build(state, command.args, data)
+		Command.BUY_LOT:
+			return _apply_buy_lot(state, command.args, data)
 		Command.HIRE:
 			return _apply_hire(state, command.args, data)
 		Command.FIRE:
@@ -132,16 +141,62 @@ static func _apply_build(state: GameState, args: Dictionary, data: GameData) -> 
 	var missing := _missing_prerequisites(state, def)  # spec 006 R3
 	if not missing.is_empty():
 		return [_rejected("missing_prerequisite", command, {"missing": missing})]
+	# Spec 008 R3: position checks come after prerequisites, before funds.
+	var position := {}
+	if data.has_map():
+		if args.has("x") and args.has("y"):
+			position = {"x": int(args["x"]), "y": int(args["y"]), "rotation": int(args.get("rotation", 0))}
+			var check := LayoutRules.placement_check(state, data, type,
+				position["x"], position["y"], position["rotation"])
+			if not check["valid"]:
+				var extra := {}
+				if check.has("facility_id"):
+					extra["facility_id"] = check["facility_id"]
+				return [_rejected(check["reason"], command, extra)]
+		else:
+			# Provisional: no position on a site with a map = first valid
+			# position (y then x, rotation 0 then 1). Kept until the UI (#79)
+			# and the bot (#81) choose positions themselves.
+			position = LayoutRules.first_valid_position(state, data, type)
+			if position.is_empty():
+				return [_rejected("out_of_bounds", command)]
 	var cost := int(def["build_cost"])
 	if cost > state.money:
 		return [_rejected("insufficient_funds", command)]
 
 	state.money -= cost
 	var instance := _new_facility(state, type, "building", state.day + int(def["build_days"]), data)
-	state.facilities.append(instance)
-	return [_event("facility_build_started", {
+	var fields := {
 		"facility_id": instance["id"], "facility_type": type, "cost": cost, "ready_day": instance["ready_day"],
-	})]
+	}
+	if not position.is_empty():
+		_set_position(instance, position["x"], position["y"], position["rotation"])
+		fields.merge(position)
+	state.facilities.append(instance)
+	return [_event("facility_build_started", fields)]
+
+
+static func _set_position(instance: Dictionary, x: int, y: int, rotation: int) -> void:
+	instance["x"] = x
+	instance["y"] = y
+	instance["rotation"] = rotation
+
+
+## Spec 008 R1. Rejections, in order: unknown_lot, lot_owned, insufficient_funds.
+static func _apply_buy_lot(state: GameState, args: Dictionary, data: GameData) -> Array:
+	var command := Command.new(Command.BUY_LOT, args)
+	var lot_id: String = args.get("lot_id", "")
+	var lot := data.lot(lot_id)
+	if lot.is_empty():
+		return [_rejected("unknown_lot", command)]
+	if lot_id in state.owned_lots:
+		return [_rejected("lot_owned", command)]
+	var price := int(lot["price"])
+	if price > state.money:
+		return [_rejected("insufficient_funds", command)]
+	state.money -= price
+	state.owned_lots.append(lot_id)
+	return [_event("lot_bought", {"lot_id": lot_id, "cost": price})]
 
 
 ## Types listés dans `requires_facilities` qui n'ont aucune instance `ready`.
@@ -481,6 +536,9 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 		"jobs": [],     # job queue, see _apply_queue_job (head = active job)
 		"launcher_id": 0,       # launch pads: launcher standing on the pad (0 = none), spec 003 R2
 		"refurb_until_day": 0,  # launch pads: first day available again after refurbishment (R5)
+		"x": null,              # spec 008 R2: top-left cell after rotation; null without a map
+		"y": null,
+		"rotation": null,
 	}
 	if data.facilities[type].has("rollout_days"):
 		instance["pad_state"] = PAD_FREE  # pads only; "status" stays building/ready

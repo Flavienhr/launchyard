@@ -17,12 +17,13 @@ var active_site_id: String = ""  # site of the game; see active_site()
 var rules: Dictionary = {}       # rules.json (spec 004: bankruptcy); empty = rule off
 var market: Dictionary = {}      # market.json (spec 007: index, shortages); empty = fixed index
 var supply_contracts: Dictionary = {}  # supply_contracts.json (spec 007: terms of supply contracts)
+var layout: Dictionary = {}      # layout.json (spec 008: global spatial rules); empty = off
 
 
 ## Files made of records with an "id" (file content: {"<stem>": [records]}).
 const INDEXED_FILES := ["components", "suppliers", "facilities", "recipes", "orbits", "sites", "launchers"]
 ## Files used as a whole object.
-const WHOLE_FILES := ["start", "staff", "contracts", "rules", "market", "supply_contracts"]
+const WHOLE_FILES := ["start", "staff", "contracts", "rules", "market", "supply_contracts", "layout"]
 
 
 ## Builds GameData from parsed data files keyed by stem (e.g. "components"),
@@ -54,4 +55,27 @@ func catalog_entry(supplier_id: String, component_id: String) -> Dictionary:
 	for entry in supplier.get("catalog", []):
 		if entry["component_id"] == component_id:
 			return entry
+	return {}
+
+
+## Map of the active site (spec 008 R1), or {} when the site has none
+## (phase 1-2 fixtures): then the whole spatial model is off.
+func site_map() -> Dictionary:
+	return active_site().get("map", {})
+
+
+func has_map() -> bool:
+	return not site_map().is_empty()
+
+
+## Lots of the active site, in file order: [{id, x, y, w, h, price}].
+func lots() -> Array:
+	return site_map().get("lots", [])
+
+
+## Lot by id, or {} if unknown.
+func lot(lot_id: String) -> Dictionary:
+	for candidate in lots():
+		if candidate["id"] == lot_id:
+			return candidate
 	return {}
