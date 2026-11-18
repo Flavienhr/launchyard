@@ -16,7 +16,8 @@ Vue de dessus, vectoriel épuré, sur fond sombre. On doit avoir l'impression de
 | Danger | #FF5C6C |
 
 ## Règles de dessin
-- `viewBox` carré, multiple de 32 (icônes : `0 0 64 64`).
+- `viewBox` carré, multiple de 32 (icônes : `0 0 64 64`). Exception : les sprites `map_` ont un `viewBox` rectangulaire = emprise en cases × 32 (4 × 3 cases : `0 0 128 96`), largeur et hauteur multiples de 32. Ils sont dessinés à rotation 0.
+- Accents de la carte : logistique `#4FD1FF`, production `#5BE49B`, lancement `#FFB547`.
 - Traits : `stroke-width` 2 (contours) ou 1 (détails), `stroke-linejoin="round"`.
 - Remplissages : `#101A26` pour les volumes, couleur d'accent uniquement pour l'élément qui porte le sens.
 - Pas de dégradés, d'ombres, de texte ni d'images embarquées.

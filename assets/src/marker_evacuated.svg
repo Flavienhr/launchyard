@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Installation évacuée : pastille panneau, flèche de sortie dans un cadre (attention). -->
+  <g id="body" fill="#101A26" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round">
+    <circle cx="32" cy="32" r="26"/>
+  </g>
+  <g id="accent" fill="none" stroke="#FFB547" stroke-width="2" stroke-linejoin="round">
+    <path d="M30 20 H20 V44 H30"/>
+    <path d="M28 32 H46 M40 25 L47 32 L40 39"/>
+  </g>
+</svg>

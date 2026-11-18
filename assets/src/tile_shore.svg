@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Rivage : terre à l'ouest, mer à l'est, trait de côte ondulé raccordable en vertical. -->
+  <g id="body">
+    <rect x="0" y="0" width="32" height="32" fill="#0B1119"/>
+    <path d="M0 0 H18 Q14 8 18 16 T18 32 H0 Z" fill="#101A26"/>
+    <path d="M18 0 Q14 8 18 16 T18 32" fill="none" stroke="#7A8FA3" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M24 8 Q28 4 32 8 M24 24 Q28 20 32 24" fill="none" stroke="#1E3A52" stroke-width="1"/>
+  </g>
+</svg>

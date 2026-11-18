@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Route est-ouest : bitume, bords, marquage central pointillé. -->
+  <g id="body">
+    <rect x="0" y="0" width="32" height="32" fill="#101A26"/>
+    <line x1="0" y1="2" x2="32" y2="2" stroke="#1E3A52" stroke-width="2"/>
+    <line x1="0" y1="30" x2="32" y2="30" stroke="#1E3A52" stroke-width="2"/>
+    <line x1="0" y1="16" x2="32" y2="16" stroke="#7A8FA3" stroke-width="2" stroke-dasharray="16 16" stroke-dashoffset="-8"/>
+  </g>
+</svg>
