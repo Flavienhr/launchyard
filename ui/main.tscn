@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/main.gd" id="1_main"]
 [ext_resource type="Theme" path="res://ui/theme/mission_control.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://ui/map_view.tscn" id="3_map"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -111,6 +112,10 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="Carte" parent="Margin/Root/Body/Tabs" instance=ExtResource("3_map")]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="Installations" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
