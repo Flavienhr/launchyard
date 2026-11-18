@@ -111,7 +111,8 @@ static func placement_check(state: GameState, data: GameData, facility_type: Str
 # --- Distance rules (spec 008 R5 to R7). Off without a map or without layout.json.
 
 static func rules_on(data: GameData) -> bool:
-	return data.has_map() and not data.layout.is_empty()
+	# A partial layout (e.g. only the move/demolish keys) must not enable R5-R7.
+	return data.has_map() and data.layout.has("service_radius_cells")
 
 
 static func is_pad_instance(data: GameData, facility: Dictionary) -> bool:
@@ -221,9 +222,6 @@ static func pad_fires_today(state: GameState, pad_id: int) -> bool:
 	return false
 
 
-## First valid position of a facility type, scanning y then x, rotation 0 then 1.
-## Returns {x, y, rotation}, or {} if none. Provisional rule for callers that
-## give no position (UI and bot until they choose one themselves).
 ## Provisional auto-placement for a build without position (until the UI #79
 ## and the bot #81 choose positions). Deterministic scan by y, then x, then
 ## rotation. Prefers, in order: valid, outside every safety zone and served;

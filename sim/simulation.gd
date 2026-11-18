@@ -527,7 +527,8 @@ static func _apply_failure_damage(state: GameState, data: GameData, failed_pad: 
 	for facility in LayoutRules.zone_contents(state, data, failed_pad):
 		if facility["status"] == "ready":
 			var cost := LayoutRules.repair_cost(data, facility)
-			facility["damaged_until_day"] = state.day + repair_days
+			# A new failure extends an ongoing repair, never shortens it (cost charged again).
+			facility["damaged_until_day"] = maxi(int(facility["damaged_until_day"]), state.day + repair_days)
 			state.pending_repair_costs += cost
 			events.append(_event("facility_damaged", {"facility_id": facility["id"], "pad_id": failed_pad["id"],
 				"repair_cost": cost, "until_day": facility["damaged_until_day"]}))
@@ -548,7 +549,10 @@ static func _apply_failure_damage(state: GameState, data: GameData, failed_pad: 
 					"launch_day": planned["launch_day"], "reason": "launcher_destroyed"}))
 		if facility["status"] == "ready" and LayoutRules.is_pad_instance(data, facility):
 			var pad_def: Dictionary = data.facilities[facility["type"]]
-			start_refurbishment(facility, state.day + int(pad_def["refurb_days_after_failure"]))
+			var until := state.day + int(pad_def["refurb_days_after_failure"])
+			if facility.get("pad_state") == PAD_REFURBISHING:
+				until = maxi(until, int(facility["refurb_until_day"]))  # never shorten an ongoing refurbishment
+			start_refurbishment(facility, until)
 	return events
 
 
