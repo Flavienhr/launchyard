@@ -1,0 +1,54 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/map_view.gd" id="1_view"]
+[ext_resource type="Script" path="res://ui/map_canvas.gd" id="2_canvas"]
+
+[node name="MapView" type="VBoxContainer"]
+theme_override_constants/separation = 6
+script = ExtResource("1_view")
+
+[node name="Body" type="HBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="Canvas" type="Control" parent="Body"]
+unique_name_in_owner = true
+clip_contents = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_canvas")
+
+[node name="StatusBar" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StatusLabel" type="Label" parent="StatusBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"DimLabel"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="BuyButton" type="Button" parent="StatusBar"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ZoomButton" type="Button" parent="StatusBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "ZOOM ×1 (Z)"
+
+[node name="BuildBar" type="ScrollContainer" parent="Body"]
+custom_minimum_size = Vector2(176, 0)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="BuildRow" type="VBoxContainer" parent="Body/BuildBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
