@@ -17,6 +17,7 @@ const ACCEPT_CONTRACT := &"accept_contract"
 const SIGN_SUPPLY_CONTRACT := &"sign_supply_contract"
 const SKIP_SUPPLY_DELIVERY := &"skip_supply_delivery"
 const TERMINATE_SUPPLY_CONTRACT := &"terminate_supply_contract"
+const CONTINUE_FREE_PLAY := &"continue_free_play"
 
 var type: StringName
 var args: Dictionary
@@ -35,7 +36,6 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 	})
 
 
-const CONTINUE_FREE_PLAY := &"continue_free_play"
 const BUY_LOT := &"buy_lot"
 const MOVE_FACILITY := &"move_facility"
 const DEMOLISH_FACILITY := &"demolish_facility"

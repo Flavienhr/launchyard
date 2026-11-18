@@ -219,6 +219,20 @@ func test_any_of_choice() -> void:
 	assert_eq(_all(_run(both_needed, strict, 1)["by_day"], "star_earned").size(), 0, "min_met 2, one met")
 
 
+func test_any_of_with_both_branches_earns_the_star_once() -> void:
+	var data := _data()
+	var state := _at_star_1(data)
+	state.stats["kit_consumed"][COMPONENT] = CONSUMED
+	state.stats["components_made"][COMPONENT] = MADE
+	state.supply_contracts.append({"id": 1, "status": SupplyRules.COMPLETED, "invoiced_total": SUPPLY_INVOICED})
+	var r := _run(state, data, 3)
+	var stars: Array = _all(r["by_day"], "star_earned")
+	assert_eq(stars.size(), 1, "one star_earned in total")
+	assert_eq(stars[0]["star"], 2)
+	assert_eq(r["state"].level["stars"], 2, "(2, not 3: the any_of is not counted twice)")
+	assert_eq(r["state"].level["star_days"], [0, 0, -1])
+
+
 # Criterion 11
 func test_time_up_and_warning() -> void:
 	var data := _data()
@@ -273,6 +287,27 @@ func test_free_play_resumes_and_freezes_stars() -> void:
 	assert_eq(r["state"].level["stars"], 0)
 	assert_eq(_all(r["by_day"], "star_earned").size(), 0)
 	assert_eq(_all(r["by_day"], "level_ended").size(), 0)
+
+
+func test_all_stars_end_freezes_then_free_play_resumes() -> void:
+	var data := _data()
+	var state := Simulation.new_game(data, SEED)
+	state.money = BIG_MONEY
+	state.supply_contracts.append({"id": 1, "status": SupplyRules.COMPLETED, "invoiced_total": SUPPLY_INVOICED})
+	for i in COMPLETED_FOR_STAR_3:
+		state.contracts.append(_completed_contract(i + 1))
+	state = _run(state, data, 1)["state"]
+	assert_eq(state.level["end_reason"], "all_stars")
+	var day := state.day
+	assert_true(day < DURATION, "(ended before the limit)")
+	assert_eq(_reason(Simulation.apply_command(state, Command.order("acme", "steel", 1), data)), "level_over")
+	assert_eq(Simulation.end_day(state, data), [])
+	assert_eq(state.day, day)
+	assert_eq(F.types(Simulation.apply_command(state, Command.continue_free_play(), data)), ["free_play_started"])
+	var r := _run(state, data, FREE_PLAY_DAYS)
+	assert_eq(r["state"].day, day + FREE_PLAY_DAYS)
+	assert_eq(_all(r["by_day"], "star_earned").size(), 0)
+	assert_eq(r["state"].level["stars"], 3)
 
 
 func test_continue_while_running_is_rejected() -> void:
