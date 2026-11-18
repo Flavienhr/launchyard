@@ -82,3 +82,90 @@ func test_only_contract_strategies_sign_contracts() -> void:
 	bot.play(SHORT_GAME_DAYS)
 	assert_eq(bot.contracts_signed, 0)
 	assert_eq(BalanceBot.OPPORTUNIST_INDEX, 950)
+
+
+# --- Politiques de placement (spec 008, issue #81) ---
+
+const RICH := 10000000
+
+
+## Bot de la politique donnée sur la carte de départ, riche, avec l'usinage prêt (prérequis de l'atelier moteurs).
+func _placement_bot(policy: String) -> BalanceBot:
+	var data := DataLoader.load_default()
+	var bot := BalanceBot.new(BalanceBot.INTEGRATE_STAGED, data, SEED_A, policy)
+	bot.state.money = RICH
+	return bot
+
+
+func _spatial_of_last(bot: BalanceBot) -> Dictionary:
+	return SimQueries.facility_spatial(bot.state, bot.data, int(bot.state.facilities[-1]["id"]))
+
+
+## careful ne met jamais un atelier en zone tant qu'une position sûre et desservie existe.
+func test_careful_never_places_in_zone_when_a_safe_served_spot_exists() -> void:
+	var bot := _placement_bot(BalanceBot.POLICY_CAREFUL)
+	for type in ["tank_shop", "machine_shop"]:
+		var best := bot._best_placement(bot.state, type)
+		assert_true(not best.is_empty() and best["key"][0] == 0 and best["key"][1] == 0,
+			"%s : une position sûre et desservie existe sur la carte de départ" % type)
+		var events := bot._place_and_build(type)
+		assert_eq(events[0]["type"], "facility_build_started", type)
+		var spatial := _spatial_of_last(bot)
+		assert_eq(spatial["in_safety_zone_of"], [], "%s hors zone" % type)
+		assert_true(spatial["served"], "%s desservi" % type)
+	assert_eq(bot.lots_bought, 0, "aucune parcelle achetée tant qu'une position sûre existe")
+	assert_eq(bot.rejections, {})
+
+
+## Avec la carte de départ, l'atelier moteurs n'a pas de position sûre et desservie : careful achète lot_west.
+func test_careful_buys_lot_west_for_the_engine_shop() -> void:
+	var bot := _placement_bot(BalanceBot.POLICY_CAREFUL)
+	bot._place_and_build("machine_shop")
+	bot.state.facilities[-1]["status"] = "ready"  # prérequis de l'atelier moteurs
+	assert_true(not bot.state.owned_lots.has("lot_west"))
+	var best := bot._best_placement(bot.state, "engine_shop")
+	assert_true(best.is_empty() or best["key"][0] == 1 or best["key"][1] == 1,
+		"pas de position sûre et desservie sans parcelle supplémentaire")
+	var events := bot._place_and_build("engine_shop")
+	assert_eq(events[0]["type"], "facility_build_started")
+	assert_true(bot.state.owned_lots.has("lot_west"), "lot_west achetée")
+	assert_eq(bot.lots_bought, 1)
+	var spatial := _spatial_of_last(bot)
+	assert_eq(spatial["in_safety_zone_of"], [])
+	assert_true(spatial["served"])
+
+
+## careful n'achète pas si la réserve manque : il prend le meilleur placement disponible.
+func test_careful_keeps_the_best_spot_when_the_reserve_is_missing() -> void:
+	var bot := _placement_bot(BalanceBot.POLICY_CAREFUL)
+	bot._place_and_build("machine_shop")
+	bot.state.facilities[-1]["status"] = "ready"
+	var cost := int(bot.data.facilities["engine_shop"]["build_cost"])
+	bot.state.money = cost  # ni le prix de la parcelle ni la réserve
+	var events := bot._place_and_build("engine_shop")
+	assert_eq(bot.lots_bought, 0)
+	assert_eq(events[0]["type"], "facility_build_started")
+
+
+## naive : premier emplacement libre (y puis x, rotation 0 puis 1), sans acheter si un emplacement existe.
+func test_naive_takes_the_first_free_spot() -> void:
+	var bot := _placement_bot(BalanceBot.POLICY_NAIVE)
+	var first: Dictionary = bot._scan(bot.state, "tank_shop", true)[0]
+	bot._place_and_build("tank_shop")
+	var placed: Dictionary = bot.placements[0]
+	assert_eq([placed["x"], placed["y"], placed["rotation"]], [first["x"], first["y"], first["rotation"]])
+	assert_eq(bot.lots_bought, 0)
+
+
+## Même seed, même politique : mêmes positions et mêmes achats de parcelles.
+func test_placement_is_deterministic() -> void:
+	var data := DataLoader.load_default()
+	for policy in [BalanceBot.POLICY_NAIVE, BalanceBot.POLICY_CAREFUL]:
+		var first := BalanceBot.new(BalanceBot.INTEGRATE_STAGED, data, SEED_B, policy)
+		first.play(SHORT_GAME_DAYS)
+		var second := BalanceBot.new(BalanceBot.INTEGRATE_STAGED, data, SEED_B, policy)
+		second.play(SHORT_GAME_DAYS)
+		assert_true(not first.placements.is_empty(), policy)
+		assert_eq(first.placements, second.placements, policy)
+		assert_eq(first.state.owned_lots, second.state.owned_lots, policy)
+		assert_eq(first.rejections, {}, policy)

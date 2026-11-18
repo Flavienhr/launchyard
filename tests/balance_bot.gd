@@ -76,9 +76,14 @@ const WORKSHOP_TYPE := "tank_shop"
 ## Number of bought L1 kits the staged strategies keep in cash (spec 006, "reserve").
 const RESERVE_KITS := 2
 
+## Placement policies (spec 008, "Ce que make balance doit montrer"). A bot parameter, not data/.
+const POLICY_NAIVE := "naive"
+const POLICY_CAREFUL := "careful"
+
 const QUIET := ["daily_costs", "offer_generated", "offer_expired", "reputation_changed", "pad_ready"]
 
 var strategy: String
+var policy := POLICY_CAREFUL
 var data: GameData
 var state: GameState
 
@@ -103,6 +108,19 @@ var chain_econ := {}                # chain -> {saving, material, running, capex
 var chain_net_at_shot := {}         # chain -> Array[int], net economy at each shot
 var bottleneck := {"early": {}, "late": {}}  # phase -> resource -> launchers it limited
 var cash_wait_days := 0
+# Spec 008 placement metrics.
+var placements: Array = []          # [{type, x, y, rotation}] positions the bot chose, in order
+var lots_bought := 0
+var lot_spend := 0
+var incidents := 0                  # failed shot with at least one damaged facility (per pad)
+var repair_costs := 0
+var rollout_costs := 0
+var evacuated_facility_days := 0
+var lost_work_points := 0           # work points lost to evacuation or lack of service
+var traced_spend := 0               # command debits + daily costs (supply invoices not included)
+var final_in_zone := 0              # positioned facilities inside a safety zone at the end
+var final_unserved := 0             # facilities with slots outside any warehouse radius at the end
+var _pending_loss := {}             # facility id -> work points lost today, set before end_day
 var reserve := 0                    # cost of 2 bought L1 kits, computed from data/
 
 # Spot capacity (spec 007 R3) metrics and queue.
@@ -133,8 +151,9 @@ var _wait_days := {}                # resource -> days the next assembly waited 
 var _cheapest_price := {}           # component -> cheapest unit price (report accounting)
 
 
-func _init(p_strategy: String, p_data: GameData, game_seed: int) -> void:
+func _init(p_strategy: String, p_data: GameData, game_seed: int, p_policy: String = POLICY_CAREFUL) -> void:
 	strategy = p_strategy
+	policy = p_policy
 	data = p_data
 	state = Simulation.new_game(data, game_seed)
 	reserve = RESERVE_KITS * _bought_kit_cost()
@@ -160,8 +179,8 @@ static func is_contract(strategy: String) -> bool:
 func play(days: int) -> void:
 	_horizon = days
 	if strategy == WORKSHOP:
-		var events := _apply(Command.build(WORKSHOP_TYPE))
-		if events[0]["type"] == "facility_build_started":
+		var events := _place_and_build(WORKSHOP_TYPE)
+		if not events.is_empty() and events[0]["type"] == "facility_build_started":
 			_workshop_id = int(events[0]["facility_id"])
 	while state.day < days and not state.game_over:
 		_flush_backlog()
@@ -177,11 +196,15 @@ func play(days: int) -> void:
 		if is_integrated(strategy):
 			_feed_workshops()
 		_schedule_launches()
+		_tally_unserved_loss()
 		_observe_day(Simulation.end_day(state, data))
+	_tally_final_layout()
 
 
 func _apply(command: Command) -> Array:
+	var money_before := state.money
 	var events := Simulation.apply_command(state, command, data)
+	traced_spend += maxi(0, money_before - state.money)
 	for event in events:
 		if event["type"] == "command_rejected":
 			var reason: String = event["reason"]
@@ -189,6 +212,9 @@ func _apply(command: Command) -> Array:
 			log.append("J%-3d REJECTED %s" % [state.day, JSON.stringify(event)])
 		elif event["type"] == "facility_build_started":
 			_add_capex(event["facility_type"], int(event["cost"]))
+		elif event["type"] == "lot_bought":
+			lots_bought += 1
+			lot_spend += int(event["cost"])
 	return events
 
 
@@ -217,8 +243,15 @@ func _hire_for(facility_type: String, count: int) -> bool:
 func _observe_day(events: Array) -> void:
 	var shot := false
 	var day := state.day - 1
+	var damaged_pads := {}
 	for event in events:
 		match event["type"]:
+			"facility_damaged":
+				damaged_pads[event["pad_id"]] = true
+			"facility_evacuated":
+				evacuated_facility_days += 1
+				_pending_loss[int(event["facility_id"])] = SimQueries.facility_rate(
+					data, _facility_by_id(int(event["facility_id"])))
 			"launch_scrubbed":
 				scrubs += 1
 			"contract_completed":
@@ -235,6 +268,10 @@ func _observe_day(events: Array) -> void:
 			"facility_built":
 				built_day[event["facility_type"]] = day
 			"daily_costs":
+				repair_costs += int(event.get("repair_costs", 0))
+				rollout_costs += int(event.get("rollout_costs", 0))
+				for key in ["upkeep", "salaries", "scrub_costs", "refurb_costs", "rollout_costs", "repair_costs", "holding_fees"]:
+					traced_spend += int(event.get(key, 0))
 				holding_fees_paid += int(event.get("holding_fees", 0))
 				penalties_earned += int(event.get("supply_penalties", 0))
 			"supply_delivery_skipped":
@@ -255,6 +292,10 @@ func _observe_day(events: Array) -> void:
 		var fields: Dictionary = event.duplicate()
 		fields.erase("type")
 		log.append("J%-3d %s %s" % [day, event["type"], JSON.stringify(fields)])
+	incidents += damaged_pads.size()
+	for id in _pending_loss:
+		lost_work_points += int(_pending_loss[id])
+	_pending_loss.clear()
 	_track_running_costs()
 	_track_scrap_floor(day)
 	_track_wait()
@@ -602,7 +643,7 @@ func _build_next() -> void:
 				return  # waits for its prerequisite (e.g. the machine shop)
 			var threshold := int(option["cost"]) + (0 if strategy == INTEGRATE_GREEDY else reserve)
 			if state.money >= threshold:
-				_apply(Command.build(type))
+				_place_and_build(type)
 		return
 
 
@@ -889,7 +930,7 @@ func _expand_storage(margin: int) -> void:
 	for option in SimQueries.build_options(state, data):
 		if data.facilities[option["type"]].has("storage_capacity") and option["remaining"] > 0 \
 				and state.money >= int(option["cost"]) + margin:
-			_apply(Command.build(option["type"]))
+			_place_and_build(option["type"])
 			return
 
 
@@ -1181,3 +1222,172 @@ func _net_of_contracts(purchases: Array) -> Array:
 		if need > 0:
 			out.append({"supplier": purchase["supplier"], "component": component_id, "quantity": need})
 	return out
+
+
+# --- Placement (spec 008, "Ce que make balance doit montrer") ---------------------------
+# The bot picks every position itself, from SimQueries.placement_check and lot_list only,
+# and sends it in build(type, x, y, rotation). Both policies are deterministic.
+
+## Builds `type` at the position the policy chooses (buying a lot when the policy says so).
+## Returns the events of the build command, or [] when no position is affordable.
+func _place_and_build(type: String) -> Array:
+	if not data.has_map():
+		return _apply(Command.build(type))
+	var cost := int(data.facilities[type]["build_cost"])
+	var spot := _choose_naive(type, cost) if policy == POLICY_NAIVE else _choose_careful(type, cost)
+	if spot.is_empty():
+		return []
+	placements.append({"type": type, "x": spot["x"], "y": spot["y"], "rotation": spot["rotation"]})
+	return _apply(Command.build(type, spot["x"], spot["y"], spot["rotation"]))
+
+
+## Cells of the owned lots, scanned by y then x, rotation 0 then 1. Returns the valid
+## placements ([{x, y, rotation, check}]); stops at the first one when `first_only`.
+func _scan(st: GameState, type: String, first_only: bool) -> Array:
+	var owned: Array = []
+	for lot in SimQueries.lot_list(st, data):
+		if lot["owned"]:
+			owned.append(lot)
+	var site_map := data.site_map()
+	var found: Array = []
+	for y in int(site_map["height"]):
+		for x in int(site_map["width"]):
+			if not _in_lots(owned, x, y):
+				continue
+			for rotation in 2:
+				var check := SimQueries.placement_check(st, data, type, x, y, rotation)
+				if check["valid"]:
+					found.append({"x": x, "y": y, "rotation": rotation, "check": check})
+					if first_only:
+						return found
+	return found
+
+
+func _in_lots(lots: Array, x: int, y: int) -> bool:
+	for lot in lots:
+		if x >= lot["x"] and x < lot["x"] + lot["w"] and y >= lot["y"] and y < lot["y"] + lot["h"]:
+			return true
+	return false
+
+
+## Unowned lots, cheapest first (id breaks ties).
+func _lots_for_sale(st: GameState) -> Array:
+	var lots: Array = []
+	for lot in SimQueries.lot_list(st, data):
+		if not lot["owned"]:
+			lots.append(lot)
+	lots.sort_custom(func(a, b): return a["price"] < b["price"] or (a["price"] == b["price"] and a["id"] < b["id"]))
+	return lots
+
+
+## naive: first free spot; when none, buy the cheapest lot as soon as the money allows.
+func _choose_naive(type: String, cost: int) -> Dictionary:
+	while true:
+		var found := _scan(state, type, true)
+		if not found.is_empty():
+			return found[0]
+		var lots := _lots_for_sale(state)
+		if lots.is_empty() or state.money < int(lots[0]["price"]) + cost:
+			return {}
+		_apply(Command.buy_lot(lots[0]["id"]))
+	return {}
+
+
+## careful: lexicographic best placement; buys a lot when the best one is unsafe or unserved
+## and a lot would allow a safe, served one (money >= price + build cost + reserve).
+func _choose_careful(type: String, cost: int) -> Dictionary:
+	var best := _best_placement(state, type)
+	if _is_good(best):
+		return best
+	# Cheapest lot that makes a safe and served placement possible, tried on a copy of the state.
+	for lot in _lots_for_sale(state):
+		var trial := state.copy()
+		Simulation.apply_command(trial, Command.buy_lot(lot["id"]), data)
+		if _is_good(_best_placement(trial, type)):
+			if state.money >= int(lot["price"]) + cost + reserve:
+				_apply(Command.buy_lot(lot["id"]))
+				return _best_placement(state, type)
+			return best
+	if best.is_empty():  # nothing fits anywhere: cheapest lot that gives any placement
+		for lot in _lots_for_sale(state):
+			var trial := state.copy()
+			Simulation.apply_command(trial, Command.buy_lot(lot["id"]), data)
+			if not _scan(trial, type, true).is_empty() and state.money >= int(lot["price"]) + cost:
+				_apply(Command.buy_lot(lot["id"]))
+				return _best_placement(state, type)
+	return best
+
+
+func _is_good(best: Dictionary) -> bool:
+	return not best.is_empty() and best["key"][0] == 0 and best["key"][1] == 0
+
+
+## Best valid placement by key [in_zone, unserved, tie-break, y, x, rotation]; {} if none.
+func _best_placement(st: GameState, type: String) -> Dictionary:
+	var def: Dictionary = data.facilities[type]
+	var unserved: Array = []  # rects of the facilities with slots that no warehouse serves yet
+	if def.has("storage_capacity"):
+		for facility in SimQueries.map_facilities(st, data):
+			if data.facilities[facility["type"]].has("slots") \
+					and not SimQueries.facility_spatial(st, data, int(facility["id"]))["served"]:
+				unserved.append(facility["rect"])
+	var best := {}
+	for candidate in _scan(st, type, false):
+		var key := _careful_key(def, candidate, unserved)
+		if best.is_empty() or _key_less(key, best["key"]):
+			best = candidate
+			best["key"] = key
+	return best
+
+
+func _careful_key(def: Dictionary, candidate: Dictionary, unserved: Array) -> Array:
+	var check: Dictionary = candidate["check"]
+	var zone_hit: bool = not check.get("zone_contains", []).is_empty() if def.has("safety_radius_cells") \
+		else not check.get("in_safety_zone_of", []).is_empty()
+	var not_served: bool = def.has("slots") and not bool(check.get("served", true))
+	var tie := 0
+	if def.has("launcher_capacity"):  # hall: cheapest roll-out to the closest pad
+		var cheapest := -1
+		for rollout in check.get("rollout", []):
+			if cheapest < 0 or int(rollout["rollout_cost"]) < cheapest:
+				cheapest = int(rollout["rollout_cost"])
+		tie = maxi(0, cheapest)
+	elif def.has("storage_capacity"):  # warehouse: most unserved facilities it would serve
+		var radius := int(data.layout.get("service_radius_cells", 0))
+		var count := 0
+		for rect in unserved:
+			if SimQueries.gap_cells(check["rect"], rect) <= radius:
+				count += 1
+		tie = -count
+	return [1 if zone_hit else 0, 1 if not_served else 0, tie, candidate["y"], candidate["x"], candidate["rotation"]]
+
+
+func _key_less(a: Array, b: Array) -> bool:
+	for i in a.size():
+		if a[i] != b[i]:
+			return a[i] < b[i]
+	return false
+
+
+## Before each end_day: work points the unserved facilities will lose today.
+func _tally_unserved_loss() -> void:
+	if not data.has_map() or not data.layout.has("unserved_productivity_pct"):
+		return
+	for facility in state.facilities:
+		if facility["status"] != "ready" or facility["jobs"].is_empty():
+			continue
+		var rate := SimQueries.facility_rate(data, facility)
+		if rate > 0 and not SimQueries.facility_spatial(state, data, int(facility["id"]))["served"]:
+			_pending_loss[int(facility["id"])] = rate - rate * int(data.layout["unserved_productivity_pct"]) / 100
+
+
+## At the end of the game: facilities inside a safety zone, facilities without service.
+func _tally_final_layout() -> void:
+	if not data.has_map():
+		return
+	for facility in SimQueries.map_facilities(state, data):
+		var spatial := SimQueries.facility_spatial(state, data, int(facility["id"]))
+		if not spatial["in_safety_zone_of"].is_empty():
+			final_in_zone += 1
+		if data.facilities[facility["type"]].has("slots") and not spatial["served"]:
+			final_unserved += 1

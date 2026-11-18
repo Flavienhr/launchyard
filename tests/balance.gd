@@ -25,6 +25,21 @@ const STRATEGIES := [
 const BUILDERS := [
 	BalanceBot.WORKSHOP, BalanceBot.INTEGRATE_STAGED, BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY,
 ]
+## Strategies that place buildings: both placement policies are played on them (spec 008).
+const PLACERS := [
+	BalanceBot.BUY_ALL, BalanceBot.WORKSHOP, BalanceBot.INTEGRATE_STAGED,
+	BalanceBot.INTEGRATE_GREEDY, BalanceBot.ENGINES_ONLY,
+]
+## Spec 008 expectations (report only).
+const GAP_MIN_PCT := 4
+const GAP_MAX_PCT := 12
+const GAP_DECORATIVE_PCT := 2
+const GAP_PUNITIVE_PCT := 20
+const NAIVE_INCIDENT_MIN_PCT := 25
+const NAIVE_INCIDENT_MAX_PCT := 50
+const CAREFUL_INCIDENT_MAX_PCT := 10
+const CAREFUL_LOT_MIN_PCT := 50
+const ROLLOUT_MAX_SHARE_PCT := 5
 const CONTRACTORS := [
 	BalanceBot.CONTRACT_ENGINES, BalanceBot.CONTRACT_FULL_KIT, BalanceBot.CONTRACT_OVERCOMMIT,
 	BalanceBot.OPPORTUNIST,
@@ -66,12 +81,23 @@ func _init() -> void:
 			bot.play(days)
 			runs[strategy].append(bot)
 
+	var naive := {}  # strategy -> Array[BalanceBot], naive placement policy
+	for strategy in PLACERS:
+		naive[strategy] = []
+		for game_seed in range(1, seeds + 1):
+			var bot := BalanceBot.new(strategy, data, game_seed, BalanceBot.POLICY_NAIVE)
+			bot.play(days)
+			naive[strategy].append(bot)
+
 	print("balance : %d seeds x %d jours, données réelles de data/ (réserve = %d cr, 2 kits L1 achetés)" % [
 		seeds, days, runs[BalanceBot.INTEGRATE_STAGED][0].reserve])
 	var rejected := false
 	_print_summary_table(runs)
 	for strategy in STRATEGIES:
 		rejected = _report_rejections(strategy, runs[strategy]) or rejected
+	for strategy in PLACERS:
+		rejected = _report_rejections(strategy + " (naive)", naive[strategy]) or rejected
+	_report_placement(runs, naive)
 	_report_commissioning(runs)
 	_report_chains(runs)
 	_report_scrap(runs, days)
@@ -115,7 +141,7 @@ func _print_summary_table(runs: Dictionary) -> void:
 			_percentile(money, 50), _percentile(money, 10), _percentile(money, 90),
 			"%d/%d" % [totals["bankrupt"], n],
 			"j%d" % _percentile(first_shots, 50) if not first_shots.is_empty() else "-"])
-	print("(contrats par partie : réussis, tirs ratés, expirés ; reports météo par partie ; argent final)")
+	print("(contrats par partie : réussis, tirs ratés, expirés ; reports météo par partie ; argent final ; placement : careful)")
 
 
 ## Returns true if the bot got commands rejected.
@@ -130,6 +156,62 @@ func _report_rejections(strategy: String, bots: Array) -> bool:
 
 
 # --- Spec 006 metrics -------------------------------------------------------------
+
+## Spec 008: placement policies, careful (default) against naive, per strategy.
+func _report_placement(runs: Dictionary, naive: Dictionary) -> void:
+	print("")
+	print("[placement, spec 008] careful (défaut) contre naive, 40 seeds : argent final médian et écart careful - naive (%)")
+	print("  %-17s %10s %10s %7s" % ["stratégie", "careful", "naive", "écart"])
+	for strategy in PLACERS:
+		print("  %-17s %10d %10d %+6.1f%%" % [strategy, _median_money(runs[strategy]), _median_money(naive[strategy]),
+			_gain_pct(naive[strategy], runs[strategy])])
+	print("  attendu : integrate_staged et engines_only de +%d à +%d%% (< %d%% : espace décoratif ; > %d%% : trop punitif) ; buy_all < %d%%" % [
+		GAP_MIN_PCT, GAP_MAX_PCT, GAP_DECORATIVE_PCT, GAP_PUNITIVE_PCT, GAP_DECORATIVE_PCT])
+	print("[placement] par partie (moy.) : incidents (seeds avec >= 1), réparations, jours-installations évacués, points de travail perdus, roll-out, parcelles achetées (seeds avec >= 1), fin de partie : bâtiments en zone / non desservis")
+	for strategy in PLACERS:
+		if strategy == BalanceBot.BUY_ALL:
+			continue
+		for pair in [["careful", runs[strategy]], ["naive", naive[strategy]]]:
+			var bots: Array = pair[1]
+			var n := bots.size()
+			var sums := [0, 0, 0, 0, 0, 0, 0, 0]
+			var with_incident := 0
+			var with_lot := 0
+			for bot: BalanceBot in bots:
+				var values := [bot.incidents, bot.repair_costs, bot.evacuated_facility_days, bot.lost_work_points,
+					bot.rollout_costs, bot.lots_bought, bot.final_in_zone, bot.final_unserved]
+				for i in sums.size():
+					sums[i] += values[i]
+				with_incident += 1 if bot.incidents > 0 else 0
+				with_lot += 1 if bot.lots_bought > 0 else 0
+			print("  %-17s %-7s incidents %4.2f (%3d%%), réparations %6.0f, évacués %5.1f j, travail perdu %6.0f, roll-out %6.0f, parcelles %4.2f (%3d%%), zone %.1f / non desservis %.1f" % [
+				strategy, pair[0], float(sums[0]) / n, 100 * with_incident / n, float(sums[1]) / n, float(sums[2]) / n,
+				float(sums[3]) / n, float(sums[4]) / n, float(sums[5]) / n, 100 * with_lot / n,
+				float(sums[6]) / n, float(sums[7]) / n])
+	var staged: Array = runs[BalanceBot.INTEGRATE_STAGED]
+	var staged_naive: Array = naive[BalanceBot.INTEGRATE_STAGED]
+	print("  integrate_staged : naive avec incident sur %d%% des seeds (%d à %d%%), careful sur %d%% (< %d%%) ; careful achète une parcelle sur %d%% des seeds (> %d%%)" % [
+		_share_with(staged_naive, "incidents"), NAIVE_INCIDENT_MIN_PCT, NAIVE_INCIDENT_MAX_PCT,
+		_share_with(staged, "incidents"), CAREFUL_INCIDENT_MAX_PCT, _share_with(staged, "lots_bought"), CAREFUL_LOT_MIN_PCT])
+	print("[roll-out] part des dépenses tracées (commandes + coûts quotidiens, hors factures de contrats) et argent final avant roll-out (médiane de argent + roll-out payé ; référence sans taxe), careful")
+	for strategy in STRATEGIES:
+		var shares: Array = []
+		var before: Array = []
+		for bot: BalanceBot in runs[strategy]:
+			shares.append(1000 * bot.rollout_costs / maxi(1, bot.traced_spend))
+			before.append(bot.state.money + bot.rollout_costs)
+		print("  %-19s roll-out %.1f%% des dépenses (< %d%%), argent final %d, sans roll-out %d" % [
+			strategy, float(_percentile(shares, 50)) / 10.0, ROLLOUT_MAX_SHARE_PCT, _median_money(runs[strategy]),
+			_percentile(before, 50)])
+
+
+## % of seeds where the integer field `field` of the bot is > 0.
+func _share_with(bots: Array, field: String) -> int:
+	var count := 0
+	for bot: BalanceBot in bots:
+		count += 1 if int(bot.get(field)) > 0 else 0
+	return 100 * count / bots.size()
+
 
 ## Day each workshop became ready (median over the seeds that built it).
 func _report_commissioning(runs: Dictionary) -> void:
