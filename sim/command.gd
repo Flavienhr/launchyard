@@ -35,8 +35,21 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 	})
 
 
-static func build(facility_type: String) -> Command:
-	return Command.new(BUILD, {"facility_type": facility_type})
+const BUY_LOT := &"buy_lot"
+
+## Without x, y: no position (accepted on a site without map; auto-placed on a
+## site with one, see Simulation._apply_build).
+static func build(facility_type: String, x: Variant = null, y: Variant = null, rotation: int = 0) -> Command:
+	var args := {"facility_type": facility_type}
+	if x != null and y != null:
+		args["x"] = int(x)
+		args["y"] = int(y)
+		args["rotation"] = rotation
+	return Command.new(BUILD, args)
+
+
+static func buy_lot(lot_id: String) -> Command:
+	return Command.new(BUY_LOT, {"lot_id": lot_id})
 
 
 static func hire(count: int) -> Command:

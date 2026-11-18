@@ -28,6 +28,7 @@ var market: Dictionary = MarketRules.empty_state() # {index, prev_index, shortag
 
 var supply_contracts: Array = [] # see SupplyRules, spec 007 R4
 var next_supply_contract_id: int = 1
+var owned_lots: Array = []     # lot ids bought or owned at start, spec 008 R1
 
 ## Cumulative counters, kept in every game (spec 009 R3):
 ## kit_consumed[component_id] = parts consumed by jobs whose recipe makes a launcher (at job_started),
@@ -66,6 +67,7 @@ func to_dict() -> Dictionary:
 		"market": market.duplicate(true),
 		"supply_contracts": supply_contracts.duplicate(true),
 		"next_supply_contract_id": next_supply_contract_id,
+		"owned_lots": owned_lots.duplicate(),
 		"stats": stats.duplicate(true),
 	}
 
@@ -83,6 +85,9 @@ static func from_dict(d: Dictionary) -> GameState:
 		# JSON turns ints into floats: recast.
 		for key in ["id", "ready_day", "assigned", "launcher_id", "refurb_until_day"]:
 			facility[key] = int(facility[key])
+		# Spec 008 R2: position (null without a map; absent in older saves).
+		for key in ["x", "y", "rotation"]:
+			facility[key] = null if facility.get(key) == null else int(facility[key])
 		for job in facility["jobs"]:
 			job["id"] = int(job["id"])
 			job["progress"] = int(job["progress"])
@@ -136,6 +141,7 @@ static func from_dict(d: Dictionary) -> GameState:
 				contract[key] = int(contract[key])
 		contract["invoiced_total"] = int(contract.get("invoiced_total", 0))
 	s.next_supply_contract_id = int(d.get("next_supply_contract_id", 1))
+	s.owned_lots = d.get("owned_lots", []).duplicate()
 	s.stats = _stats_from_dict(d.get("stats", empty_stats()))
 	return s
 

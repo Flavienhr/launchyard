@@ -1,16 +1,28 @@
 {
   "site": "pointe_sternes",
   "money": 200000,
-  "owned_lots": ["lot_start"],
-  "facilities": [
-    "warehouse",
-    "integration_hall",
-    "launch_pad"
+  "owned_lots": [
+    "lot_start"
   ],
-  "facility_positions": [
-    { "facility_type": "warehouse", "x": 10, "y": 14, "rotation": 0 },
-    { "facility_type": "integration_hall", "x": 10, "y": 8, "rotation": 0 },
-    { "facility_type": "launch_pad", "x": 22, "y": 10, "rotation": 0 }
+  "facilities": [
+    {
+      "facility_type": "warehouse",
+      "x": 10,
+      "y": 14,
+      "rotation": 0
+    },
+    {
+      "facility_type": "integration_hall",
+      "x": 10,
+      "y": 8,
+      "rotation": 0
+    },
+    {
+      "facility_type": "launch_pad",
+      "x": 22,
+      "y": 10,
+      "rotation": 0
+    }
   ],
   "technicians": 4,
   "assignments": {

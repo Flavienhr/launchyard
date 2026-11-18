@@ -180,11 +180,12 @@ def check_references(docs: dict, errors: list[str]) -> None:
     site_ids = {s.get("id") for s in docs.get("sites", {}).get("sites", [])}
     if "site" in start and start["site"] not in site_ids:
         errors.append(f"start.json: site inconnu '{start['site']}'")
-    for facility_id in start.get("facilities", []):
+    start_types = [f["facility_type"] for f in start.get("facilities", [])]
+    for facility_id in start_types:
         if facility_id not in facilities:
             errors.append(f"start.json: installation inconnue '{facility_id}'")
     for facility_id, count in start.get("assignments", {}).items():
-        if facility_id not in start.get("facilities", []):
+        if facility_id not in start_types:
             errors.append(f"start.json: affectation sur une installation absente des départs '{facility_id}'")
             continue
         slots = facility_by_id.get(facility_id, {}).get("slots", 0)
@@ -329,9 +330,7 @@ def check_spatial(docs: dict, errors: list[str]) -> None:
     start = docs.get("start", {})
     site_id = start.get("site")
     owned = start.get("owned_lots", [])
-    positions = start.get("facility_positions", [])
-    if "facility_positions" in start and sorted(p["facility_type"] for p in positions) != sorted(start.get("facilities", [])):
-        errors.append("start.json: facility_positions ne correspond pas à facilities")
+    positions = start.get("facilities", [])
 
     if site_id not in maps:
         if owned:
@@ -347,10 +346,6 @@ def check_spatial(docs: dict, errors: list[str]) -> None:
     for lot_id in owned:
         if lot_id in lot_by_id:
             owned_cells |= cells(lot_by_id[lot_id])
-
-    for start_fid in start.get("facilities", []):
-        if start_fid not in [p["facility_type"] for p in positions]:
-            errors.append(f"start.json: installation de départ '{start_fid}' sans position")
 
     placed: list[tuple[str, dict]] = []
     for pos in positions:

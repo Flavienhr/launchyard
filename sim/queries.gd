@@ -5,6 +5,20 @@ extends RefCounted
 ## that the UI contains no game rule.
 
 
+## Spatial model (spec 008 R4, R9): see LayoutRules.
+static func gap_cells(rect_a: Dictionary, rect_b: Dictionary) -> int:
+	return LayoutRules.gap_cells(rect_a, rect_b)
+
+
+static func placement_check(state: GameState, data: GameData, facility_type: String,
+		x: int, y: int, rotation: int) -> Dictionary:
+	return LayoutRules.placement_check(state, data, facility_type, x, y, rotation)
+
+
+static func lot_list(state: GameState, data: GameData) -> Array:
+	return LayoutRules.lot_list(state, data)
+
+
 ## Throughput (work points per day) of a facility instance.
 static func facility_rate(data: GameData, facility: Dictionary) -> int:
 	var def: Dictionary = data.facilities[facility["type"]]
