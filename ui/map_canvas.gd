@@ -7,6 +7,7 @@ extends Control
 signal placement_requested(facility_type: String, x: int, y: int, rotation: int)
 signal lot_clicked(lot_id: String)
 signal cancelled
+signal facility_clicked(facility_id: int)
 signal hover_text_changed(text: String)
 
 const COLOR_BG := Color("#0B1119")
@@ -36,6 +37,9 @@ var session: GameSession
 var build_type := ""
 var rotation_index := 0
 var selected_lot := ""
+var selected_facility := 0
+## Instance being moved (0 = plain construction of `build_type`).
+var move_id := 0
 var zoom := 1:
 	set(value):
 		zoom = clampi(value, 1, MAX_ZOOM)
@@ -47,6 +51,8 @@ var _hover := Vector2i(-1, -1)
 var _lots: Array = []
 var _facilities: Array = []
 var _check: Dictionary = {}
+var _zones: Dictionary = {"safety": [], "service": []}
+var _rollouts: Array = []
 var _textures: Dictionary = {}
 
 
@@ -62,6 +68,9 @@ func refresh() -> void:
 		return
 	_lots = SimQueries.lot_list(session.state, session.data)
 	_facilities = SimQueries.map_facilities(session.state, session.data)
+	_zones = SimQueries.map_zones(session.state, session.data)
+	if selected_facility != 0 and _facility_by_id(selected_facility).is_empty():
+		selected_facility = 0
 	if selected_lot != "" and _lot_by_id(selected_lot).get("owned", true):
 		selected_lot = ""
 	_update_check()
@@ -154,11 +163,24 @@ func _facility_at(cell_pos: Vector2i) -> Dictionary:
 	return {}
 
 
+func _facility_by_id(facility_id: int) -> Dictionary:
+	for facility in _facilities:
+		if int(facility["id"]) == facility_id:
+			return facility
+	return {}
+
+
 func _update_check() -> void:
 	_check = {}
+	_rollouts = []
 	if session == null or build_type == "" or _hover.x < 0 or not session.data.has_map():
 		return
-	_check = SimQueries.placement_check(session.state, session.data, build_type, _hover.x, _hover.y, rotation_index)
+	if move_id > 0:
+		_check = SimQueries.move_check(session.state, session.data, move_id, _hover.x, _hover.y, rotation_index)
+	else:
+		_check = SimQueries.placement_check(session.state, session.data, build_type, _hover.x, _hover.y, rotation_index)
+		if bool(_check["valid"]):
+			_rollouts = SimQueries.placement_rollouts(session.state, session.data, build_type, _check["rect"])
 
 
 # --- Input ---------------------------------------------------------------------
@@ -196,6 +218,17 @@ func _on_left_click(cell_pos: Vector2i) -> void:
 		if not _check.is_empty() and bool(_check["valid"]):
 			placement_requested.emit(build_type, cell_pos.x, cell_pos.y, rotation_index)
 		return
+	var facility := _facility_at(cell_pos)
+	if not facility.is_empty():
+		selected_lot = ""
+		selected_facility = int(facility["id"])
+		lot_clicked.emit("")
+		facility_clicked.emit(selected_facility)
+		queue_redraw()
+		return
+	if selected_facility != 0:
+		selected_facility = 0
+		facility_clicked.emit(0)
 	var lot := _lot_at(cell_pos)
 	if not lot.is_empty() and not bool(lot["owned"]):
 		selected_lot = lot["id"]
@@ -218,8 +251,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				rotate_ghost()
 				accept_event()
 		KEY_ESCAPE:
-			if build_type != "" or selected_lot != "":
+			if build_type != "" or selected_lot != "" or selected_facility != 0:
 				selected_lot = ""
+				selected_facility = 0
+				facility_clicked.emit(0)
 				cancelled.emit()
 				accept_event()
 		KEY_Z:
@@ -287,7 +322,9 @@ func _draw() -> void:
 	_draw_lots()
 	for facility in _facilities:
 		_draw_facility(facility)
+	_draw_zones()
 	draw_rect(map_rect, COLOR_LINE, false, 1.0)
+	_draw_selection()
 	_draw_hover_outline()
 	_draw_ghost()
 
@@ -344,11 +381,20 @@ func _draw_facility(facility: Dictionary) -> void:
 		var launcher_size := Vector2(cell * 2, cell) if _is_rotated(facility) else Vector2(cell, cell * 2)
 		var launcher_rect := Rect2(center - launcher_size / 2.0, launcher_size)
 		_draw_launcher(String(launchers[i]), launcher_rect, _is_rotated(facility))
+	var markers: Array = []
 	if facility["job_blocked"] and not building:
-		var marker := _tex("marker_job_blocked")
-		var marker_size := maxf(cell * 1.1, 16.0)
+		markers.append("marker_job_blocked")
+	if int(facility["damaged_until_day"]) >= 0:
+		markers.append("marker_damaged")
+	if bool(facility["evacuated_today"]):
+		markers.append("marker_evacuated")
+	if not building and not bool(facility["served"]):
+		markers.append("marker_unserved")
+	var marker_size := maxf(cell * 1.1, 16.0)
+	for i in markers.size():
+		var marker := _tex(markers[i])
 		if marker != null:
-			draw_texture_rect(marker, Rect2(rect.end - Vector2(marker_size, rect.size.y), Vector2(marker_size, marker_size)), false)
+			draw_texture_rect(marker, Rect2(rect.end - Vector2(marker_size * (i + 1), rect.size.y), Vector2(marker_size, marker_size)), false)
 	var tag := "#%d" % int(facility["id"])
 	_text_at(rect.position + Vector2(4, FONT_SIZE + 1), tag, COLOR_TEXT)
 	draw_rect(rect, COLOR_WARN if building else COLOR_LINE, false, 1.0)
@@ -401,6 +447,51 @@ func _tile_overlay(rect: Dictionary) -> void:
 				Vector2(cell, cell)), false)
 
 
+## Cell rectangle clipped to the map, in pixels.
+func _zone_px(rect: Dictionary) -> Rect2:
+	var map_rect := Rect2(_origin(), Vector2(_map_size()) * float(_cell()))
+	return _cell_rect(rect).intersection(map_rect)
+
+
+func _dashed_rect(rect: Rect2, color: Color) -> void:
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	for i in 4:
+		draw_dashed_line(corners[i], corners[(i + 1) % 4], color, 2.0, 6.0)
+
+
+## Safety zones (selected pad, pad firing today, or every pad while placing),
+## service zones (selected warehouse, or while placing a workshop), and the
+## zone of the pad being placed. All rectangles come from SimQueries.
+func _draw_zones() -> void:
+	var placing := build_type != ""
+	for zone in _zones["safety"]:
+		var firing: bool = zone["fires_today"]
+		if int(zone["pad_id"]) == selected_facility or firing or placing:
+			var px := _zone_px(zone["rect"])
+			draw_rect(px, Color(COLOR_DANGER, 0.10))
+			_dashed_rect(px, COLOR_DANGER)
+	var workshop: bool = placing and session.data.facilities[build_type].has("slots")
+	for zone in _zones["service"]:
+		if workshop or int(zone["facility_id"]) == selected_facility:
+			var px := _zone_px(zone["rect"])
+			draw_rect(px, Color(COLOR_ACCENT, 0.10))
+			draw_rect(px, COLOR_ACCENT, false, 1.0)
+	if placing and not _check.is_empty() and not _check["rect"].is_empty():
+		var ghost_zone := SimQueries.safety_zone_rect(session.data, build_type, _check["rect"])
+		if not ghost_zone.is_empty():
+			var px := _zone_px(ghost_zone)
+			draw_rect(px, Color(COLOR_DANGER, 0.14))
+			_dashed_rect(px, COLOR_DANGER)
+
+
+func _draw_selection() -> void:
+	if selected_facility == 0 or build_type != "":
+		return
+	var facility := _facility_by_id(selected_facility)
+	if not facility.is_empty():
+		draw_rect(_cell_rect(facility["rect"]).grow(1.0), COLOR_ACCENT, false, 3.0)
+
+
 func _draw_hover_outline() -> void:
 	if _hover.x < 0 or build_type != "":
 		return
@@ -435,16 +526,18 @@ func _extra_lines(check: Dictionary) -> Array:
 	if not bool(check["valid"]):
 		return lines
 	if check.has("served"):
-		lines.append(tr("Desservie") if check["served"] else tr("Non desservie"))
+		lines.append(tr("Desservie") if check["served"] else [tr("Non desservie : cadence réduite"), COLOR_WARN])
 	if check.has("in_safety_zone_of"):
 		var pads: Array = check["in_safety_zone_of"]
 		if pads.is_empty():
 			lines.append(tr("Hors zone"))
 		else:
-			lines.append(tr("Dans la zone du pas n° %s") % ", ".join(pads.map(func(p): return str(p))))
-	for entry in check.get("rollout", []):
-		lines.append(tr("Roll-out pas n° %d : %d j / %s cr") % [
-			int(entry["pad_id"]), int(entry["rollout_days"]), _fmt(int(entry["rollout_cost"]))])
+			lines.append([tr("Dans la zone du pas n° %s : évacuée les jours de tir") % ", ".join(pads.map(func(p): return str(p))), COLOR_WARN])
+	for entry in _rollouts:
+		var target := tr("pas n° %d") % int(entry["pad_id"]) if int(entry["pad_id"]) > 0 \
+			else tr("hall n° %d") % int(entry["hall_id"])
+		lines.append(tr("Roll-out %s : %d j / %s cr") % [
+			target, int(entry["rollout_days"]), _fmt(int(entry["rollout_cost"]))])
 	return lines
 
 
@@ -484,17 +577,28 @@ func _bubble(target: Rect2, lines: Array, border: Color) -> void:
 	var line_h := float(FONT_SIZE + 4)
 	var width := 0.0
 	for line in lines:
-		width = maxf(width, font.get_string_size(String(line), HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
+		width = maxf(width, font.get_string_size(_line_text(line), HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
 	var box_size := Vector2(width + 16.0, line_h * lines.size() + 8.0)
 	var pos := Vector2(target.end.x + 8.0, target.position.y)
 	if pos.x + box_size.x > size.x:
-		pos.x = target.position.x - box_size.x - 8.0
+		# No room on the right: above the ghost (or below it), never on top of it.
+		pos = Vector2(target.position.x, target.position.y - box_size.y - 6.0)
+		if pos.y < 0.0:
+			pos.y = target.end.y + 6.0
 	pos.x = clampf(pos.x, 0.0, maxf(0.0, size.x - box_size.x))
 	pos.y = clampf(pos.y, 0.0, maxf(0.0, size.y - box_size.y))
 	draw_rect(Rect2(pos, box_size), Color(COLOR_BG, 0.92))
 	draw_rect(Rect2(pos, box_size), border, false, 1.0)
 	for i in lines.size():
-		_text_at(pos + Vector2(8.0, 4.0 + line_h * (i + 1) - 4.0), String(lines[i]), border if i == 0 else COLOR_TEXT)
+		var color: Color = border if i == 0 else COLOR_TEXT
+		if lines[i] is Array:
+			color = lines[i][1]
+		_text_at(pos + Vector2(8.0, 4.0 + line_h * (i + 1) - 4.0), _line_text(lines[i]), color)
+
+
+## A bubble line is a string or [string, color].
+func _line_text(line: Variant) -> String:
+	return String(line[0]) if line is Array else String(line)
 
 
 # --- Names and numbers ---------------------------------------------------------------
