@@ -35,6 +35,7 @@ static func order(supplier_id: String, component_id: String, quantity: int) -> C
 	})
 
 
+const CONTINUE_FREE_PLAY := &"continue_free_play"
 const BUY_LOT := &"buy_lot"
 const MOVE_FACILITY := &"move_facility"
 const DEMOLISH_FACILITY := &"demolish_facility"
@@ -110,6 +111,10 @@ static func sign_supply_contract(supplier_id: String, component_id: String, quan
 		"supplier_id": supplier_id, "component_id": component_id, "quantity": quantity,
 		"period_days": period_days, "deliveries": deliveries, "pricing": pricing, "priority": priority,
 	})
+
+
+static func continue_free_play() -> Command:
+	return Command.new(CONTINUE_FREE_PLAY)
 
 
 static func skip_supply_delivery(contract_id: int) -> Command:

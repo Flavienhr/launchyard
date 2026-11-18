@@ -35,6 +35,9 @@ var owned_lots: Array = []     # lot ids bought or owned at start, spec 008 R1
 ## components_made[component_id] = parts that actually entered the stock.
 var stats: Dictionary = empty_stats()
 
+## Level state (spec 009 R2): {id, status, stars, star_days, end_day, end_reason}.
+var level: Dictionary = LevelRules.empty_state()
+
 
 static func empty_stats() -> Dictionary:
 	return {"kit_consumed": {}, "components_made": {}}
@@ -69,6 +72,7 @@ func to_dict() -> Dictionary:
 		"next_supply_contract_id": next_supply_contract_id,
 		"owned_lots": owned_lots.duplicate(),
 		"stats": stats.duplicate(true),
+		"level": level.duplicate(true),
 	}
 
 
@@ -143,6 +147,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.next_supply_contract_id = int(d.get("next_supply_contract_id", 1))
 	s.owned_lots = d.get("owned_lots", []).duplicate()
 	s.stats = _stats_from_dict(d.get("stats", empty_stats()))
+	s.level = LevelRules.from_dict(d.get("level", LevelRules.empty_state()))
 	return s
 
 

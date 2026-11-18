@@ -29,6 +29,7 @@ static func new_game(data: GameData, game_seed: int) -> GameState:
 			if facility["type"] == type:  # first instance of that type
 				facility["assigned"] = int(assignments[type])
 				break
+	state.level = LevelRules.initial_state(data)  # spec 009 R2
 	state.market = MarketRules.initial_state(data)
 	state.reputation = int(data.contracts.get("reputation_start", 0))
 	var rng := SimRng.for_stream(state, SimRng.CONTRACTS)  # day 0
@@ -51,6 +52,13 @@ static func step(state: GameState, commands: Array, data: GameData) -> StepResul
 static func apply_command(state: GameState, command: Command, data: GameData) -> Array:
 	if state.game_over:  # spec 004 R4
 		return [_rejected("game_over", command)]
+	if command.type == Command.CONTINUE_FREE_PLAY:  # spec 009 R8
+		var outcome := LevelRules.continue_free_play(state)
+		if outcome["reason"] != "":
+			return [_rejected(outcome["reason"], command)]
+		return outcome["events"]
+	if LevelRules.is_ended(state):  # spec 009 R7
+		return [_rejected("level_over", command)]
 	match command.type:
 		Command.ORDER:
 			return _apply_order(state, command.args, data)
@@ -553,7 +561,7 @@ static func _new_facility(state: GameState, type: String, status: String, ready_
 # --- End of day resolution --------------------------------------------------
 
 static func end_day(state: GameState, data: GameData) -> Array:
-	if state.game_over:  # spec 004 R4 : la partie est finie, le jour n'avance plus
+	if state.game_over or LevelRules.is_ended(state):  # spec 004 R4, spec 009 R7 : partie gelée
 		return []
 	var events: Array = []
 	var supply_flows := {"penalties": 0}  # supplier penalties earned at step 2, credited at step 8
@@ -568,6 +576,7 @@ static func end_day(state: GameState, data: GameData) -> Array:
 	events.append_array(_resolve_contract_deadlines(state, data))
 	events.append_array(_resolve_finances(state, data, launch_costs, supply_flows))
 	events.append_array(_resolve_bankruptcy(state, data))
+	events.append_array(LevelRules.evaluate(state, data))  # spec 009 R6, after bankruptcy
 	state.day += 1
 	return events
 
@@ -936,6 +945,11 @@ static func storage_used(state: GameState, data: GameData) -> int:
 
 
 # --- Events -----------------------------------------------------------------
+
+## Public wrapper of _event for the rule files (LevelRules).
+static func make_event(type: String, fields: Dictionary) -> Dictionary:
+	return _event(type, fields)
+
 
 static func _event(type: String, fields: Dictionary) -> Dictionary:
 	assert(not fields.has("type"), "event field 'type' is reserved for the event type")

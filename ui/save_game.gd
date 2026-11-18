@@ -11,7 +11,7 @@ const MANUAL_PATH := "user://saves/manual.json"
 
 ## Fields that older saves may lack (GameState.from_dict has defaults for them).
 const OPTIONAL_STATE_KEYS := ["recipe_attempts", "recipe_scrapped", "market",
-	"supply_contracts", "next_supply_contract_id", "stats", "owned_lots"]
+	"supply_contracts", "next_supply_contract_id", "stats", "owned_lots", "level"]
 
 
 ## Writes the file (temp file then rename, so a crash never leaves half a save).
