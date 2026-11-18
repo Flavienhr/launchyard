@@ -435,3 +435,34 @@ func test_supply_contract_infos_costs_and_skip_notice() -> void:
 	assert_eq(infos[0]["termination_fee"], 3 * 10 * F.UNIT_PRICE * 40 / 100)
 	assert_eq(infos[0]["remaining"], 3)
 	assert_eq(SimQueries.market_next_update_day(s[0], s[1]), -1)
+
+
+func _mapped_state() -> Array:
+	var data := F.data()
+	data.sites[F.SITE_ID]["map"] = {"width": 10, "height": 10, "terrain": [],
+		"lots": [{"id": "A", "x": 0, "y": 0, "w": 10, "h": 10, "price": 0}]}
+	data.facilities["shop"]["footprint"] = [3, 1]
+	data.facilities["warehouse"]["footprint"] = [2, 2]
+	data.facilities["hall"]["footprint"] = [2, 2]
+	data.start = {"money": F.START_MONEY, "facilities": [{"facility_type": "warehouse", "x": 0, "y": 0, "rotation": 0}], "site": F.SITE_ID, "owned_lots": ["A"]}
+	return [Simulation.new_game(data, 1), data]
+
+
+func test_map_facilities_positions_and_status() -> void:
+	var s := _mapped_state()
+	s[0].money = 1_000_000
+	var events := Simulation.apply_command(s[0], Command.build("shop", 5, 5, 1), s[1])
+	assert_eq(F.types(events), ["facility_build_started"])
+	var list := SimQueries.map_facilities(s[0], s[1])
+	assert_eq(list.size(), 2)
+	var shop: Dictionary = list[1]
+	assert_eq(shop["type"], "shop")
+	assert_eq(shop["status"], "building")
+	assert_eq(shop["rect"], {"x": 5, "y": 5, "w": 1, "h": 3})
+	assert_eq(shop["launchers"], [])
+	assert_eq(shop["job_blocked"], false)
+
+
+func test_map_facilities_empty_without_map() -> void:
+	var s := _state()
+	assert_eq(SimQueries.map_facilities(s[0], s[1]).size(), 0)

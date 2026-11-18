@@ -23,6 +23,34 @@ static func facility_spatial(state: GameState, data: GameData, facility_id: int)
 	return LayoutRules.facility_spatial(state, data, facility_id)
 
 
+## Positioned facilities for the map: [{id, type, name, status, ready_day, rect,
+## launchers: [model ids standing on the pad or stored in the hall], job_blocked}].
+## Instances without a position (site without map) are skipped.
+static func map_facilities(state: GameState, data: GameData) -> Array:
+	var out: Array = []
+	for facility in state.facilities:
+		var rect := LayoutRules.instance_rect(data, facility)
+		if rect.is_empty():
+			continue
+		var models: Array = []
+		var on_pad := _launcher_by_id(state, int(facility.get("launcher_id", 0)))
+		if not on_pad.is_empty():
+			models.append(on_pad["model"])
+		for launcher in launchers_in(state, int(facility["id"])):
+			models.append(launcher["model"])
+		var blocked := false
+		for job in facility["jobs"]:
+			if String(job["blocked"]) != "":
+				blocked = true
+		out.append({
+			"id": int(facility["id"]), "type": facility["type"],
+			"name": data.facilities[facility["type"]]["name"],
+			"status": facility["status"], "ready_day": int(facility["ready_day"]),
+			"rect": rect, "launchers": models, "job_blocked": blocked,
+		})
+	return out
+
+
 ## Throughput (work points per day) of a facility instance.
 static func facility_rate(data: GameData, facility: Dictionary) -> int:
 	var def: Dictionary = data.facilities[facility["type"]]

@@ -86,6 +86,7 @@ const SCHEDULE_DAYS := 30
 @onready var _rep_label: Label = %RepLabel
 @onready var _contracts_box: VBoxContainer = %ContractsBox
 @onready var _tabs: TabContainer = %Tabs
+@onready var _map: MapView = %Carte
 @onready var _facilities_box: VBoxContainer = %FacilitiesBox
 @onready var _build_box: VBoxContainer = %BuildBox
 @onready var _bom_box: VBoxContainer = %BomBox
@@ -108,7 +109,8 @@ func _ready() -> void:
 	%LoadButton.pressed.connect(_on_load)
 	%ContinueButton.pressed.connect(_on_continue)
 	%StartNewButton.pressed.connect(_new_game)
-	var titles := [tr("Installations"), tr("Construction"), tr("Nomenclature"),
+	_map.command_requested.connect(_send)
+	var titles := [tr("Carte"), tr("Installations"), tr("Construction"), tr("Nomenclature"),
 		tr("Fournisseurs"), tr("Appro."), tr("Contrats"), tr("Lancement")]
 	for i in titles.size():
 		_tabs.set_tab_title(i, titles[i])
@@ -137,6 +139,7 @@ func _attach(new_session: GameSession) -> void:
 	session = new_session
 	session.autosave_path = SaveGame.AUTOSAVE_PATH
 	session.changed.connect(_on_session_changed)
+	_map.bind(session)
 	_sel_launcher = -1
 	_sel_pad = -1
 	_sel_contract = -1
@@ -203,6 +206,7 @@ func _refresh() -> void:
 	_money_label.text = "%s cr" % _fmt(state.money)
 	_money_label.theme_type_variation = &"DangerLabel" if state.money < 0 else &"Label"
 	_refresh_reputation()
+	_map.refresh()
 	_rebuild(_contracts_box, _build_contracts)
 	_rebuild(_facilities_box, _build_facilities)
 	_rebuild(_build_box, _build_construction)
@@ -1390,6 +1394,8 @@ func _log_event(e: Dictionary) -> void:
 		"facility_build_started":
 			_log_line(tr("Construction : %s (-%s cr), prête au jour %d") % [
 				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)
+		"lot_bought":
+			_log_line(tr("Parcelle achetée : %s (-%s cr)") % [e["lot_id"], _fmt(e["cost"])], COLOR_ACCENT)
 		"facility_built":
 			_log_line(tr("Installation prête : %s") % _facility_name(e["facility_id"]), COLOR_OK)
 		"staff_hired":
