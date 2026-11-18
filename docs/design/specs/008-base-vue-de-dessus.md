@@ -1,5 +1,5 @@
 # 008 — La base vue de dessus : grille, emprises et distances
-Statut : brouillon
+Statut : validée (2026-11-18)
 
 ## Intention joueur
 Aujourd'hui, construire revient à cliquer sur un bouton dans un onglet : le bâtiment n'a ni position ni emprise. Le jeu ressemble à un tableur, et le joueur ne construit pas **sa** base. Cette spec fait de la parcelle une grille vue de dessus. Le joueur y pose ses installations, et l'écran principal devient la carte.
@@ -301,7 +301,8 @@ Comportement attendu :
 - **Distance entrepôt ↔ route ou port, qui allonge les livraisons** : écartée. Les délais fournisseurs vont de 3 à 10 jours, avec des retards aléatoires et des pénuries (spec 007). Un jour de plus serait du bruit. La règle ferait aussi doublon avec la desserte : elle pousserait de même à regrouper les bâtiments, avec un effet plus faible et moins lisible. La route reste un décor.
 - **Adjacence stricte atelier ↔ entrepôt** (se toucher) : remplacée par un rayon de desserte de 3 cases. L'adjacence stricte rend le placement trop contraint pour une grille de cette taille, et elle n'apporte pas plus de décisions.
 
-## Questions pour Flavien
+## Décisions (validées par Flavien le 2026-11-18)
+Toutes les recommandations ci-dessous sont retenues.
 1. **Construire dans la zone de sécurité : permis ou interdit ?** Interdire est plus réaliste, mais la zone devient une simple case grisée : il n'y a plus de pari. *Recommandation : permis, avec évacuation et dégâts (R5). C'est la seule source de risque spatial, et c'est elle qui crée le dilemme de l'atelier moteurs.*
 2. **Déplacer : payant ou gratuit ?** Dans Two Point, déplacer une pièce ne coûte presque rien. Ici, un déplacement gratuit annulerait toute décision de placement. *Recommandation : payant, 25 % du prix de construction et 50 % de la durée de construction. À réduire si les testeurs se sentent piégés par leurs premiers placements.*
 3. **Roll-out : en jours seulement, ou aussi en crédits ?** En jours seulement, l'effet est presque nul : le hall est libéré dès la planification (spec 003, R2), donc un jour de roll-out en plus ne réduit pas la cadence. *Recommandation : jours et crédits (400 par case d'écart). Cela coûte environ 51 000 à toutes les stratégies sur 240 jours (à recaler).*

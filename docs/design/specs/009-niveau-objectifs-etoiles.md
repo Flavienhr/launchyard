@@ -1,5 +1,5 @@
 # 009 — Premier niveau : objectifs en étoiles
-Statut : brouillon
+Statut : validée (2026-11-18)
 
 ## Intention joueur
 Aujourd'hui, la partie n'a ni but ni fin. Selon le bot, une fois la boucle maîtrisée, l'argent monte tout seul (1,38 M à 240 jours en achetant tout, 2,21 M à 360 jours) et rien ne résiste au joueur. Cette spec donne un but : un **niveau** de 240 jours sur la Pointe des Sternes, noté de 1 à 3 étoiles, façon Two Point.
@@ -351,7 +351,8 @@ Procédure de recalage, à lancer après la fusion de la spec 008 (elle change l
 - Objectifs liés à la fiabilité (« tirs sans échec ») tant qu'il n'existe pas de banc d'essai.
 - Indication « étoile hors d'atteinte » : la sim ne prédit pas si un objectif cumulé peut encore être rempli.
 
-## Questions pour Flavien
+## Décisions (validées par Flavien le 2026-11-18)
+Toutes les recommandations ci-dessous sont retenues.
 1. **Limite de temps, ou niveau sans limite comme dans Two Point ?** Sans limite, tout seuil s'atteint en attendant : à 360 jours, `buy_all` a 2,21 M, plus que la cible de l'étoile 3. Les étoiles ne mesureraient plus que la patience. *Recommandation : limite de 240 jours (l'horizon du bot, et 30 à 60 minutes de jeu). Le format accepte `duration_days = 0` si tu préfères tester sans limite. Une durée de 300 jours favoriserait l'intégration, qui se rembourse tard (chaîne moteur au 17e lanceur).*
 2. **Étoile 2 « au choix » (atelier ou contrat) ?** C'est ce qui permet de pousser les systèmes sans tous les imposer, au prix d'un format un peu plus riche (`any_of`). *Recommandation : oui.*
 3. **Deux étoiles impossibles en achetant tout au comptant ?** Avec la question 2, `buy_all` plafonne à 1 étoile. *Recommandation : oui. Un seul contrat d'approvisionnement suffit pour lever le blocage, ce qui reste « tout acheter ».*
