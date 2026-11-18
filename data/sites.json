@@ -10,7 +10,22 @@
       "start_day_offset": 0,
       "season_names": ["hiver", "printemps", "été", "automne"],
       "scrub_chance_by_season": [0.10, 0.15, 0.35, 0.25],
-      "_note": "Spec 003, tableau sites.json. Le nom d'affichage n'est pas dans la spec (seul l'id l'est)."
+      "map": {
+        "width": 36,
+        "height": 24,
+        "terrain": [
+          { "kind": "sea", "x": 32, "y": 0, "w": 4, "h": 24 },
+          { "kind": "road", "x": 0, "y": 23, "w": 32, "h": 1 }
+        ],
+        "lots": [
+          { "id": "lot_start", "x": 8, "y": 6, "w": 20, "h": 12, "price": 0 },
+          { "id": "lot_west", "x": 0, "y": 6, "w": 8, "h": 12, "price": 30000 },
+          { "id": "lot_north", "x": 0, "y": 0, "w": 28, "h": 6, "price": 40000 },
+          { "id": "lot_south", "x": 0, "y": 18, "w": 28, "h": 5, "price": 40000 },
+          { "id": "lot_coast", "x": 28, "y": 0, "w": 4, "h": 23, "price": 35000 }
+        ]
+      },
+      "_note": "Spec 003, tableau sites.json. Le nom d'affichage n'est pas dans la spec (seul l'id l'est). Carte : spec 008, Données."
     }
   ]
 }

@@ -95,6 +95,16 @@
               "type": "string",
               "pattern": "^[a-z][a-z0-9_]*$"
             }
+          },
+          "footprint": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "integer", "minimum": 1 }
+          },
+          "safety_radius_cells": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "patternProperties": {

@@ -38,6 +38,28 @@
     "site": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "owned_lots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "facility_positions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["facility_type", "x", "y", "rotation"],
+        "additionalProperties": false,
+        "properties": {
+          "facility_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "x": { "type": "integer", "minimum": 0 },
+          "y": { "type": "integer", "minimum": 0 },
+          "rotation": { "type": "integer", "enum": [0, 1] }
+        }
+      }
     }
   },
   "patternProperties": {

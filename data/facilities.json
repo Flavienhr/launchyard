@@ -8,7 +8,8 @@
       "buildable": true,
       "build_cost": 25000,
       "build_days": 6,
-      "max_count": 3
+      "max_count": 3,
+      "footprint": [4, 3]
     },
     {
       "id": "tank_shop",
@@ -19,7 +20,8 @@
       "build_days": 10,
       "max_count": 1,
       "slots": 3,
-      "productivity_per_slot": 10
+      "productivity_per_slot": 10,
+      "footprint": [4, 3]
     },
     {
       "id": "integration_hall",
@@ -31,7 +33,8 @@
       "max_count": 2,
       "slots": 4,
       "productivity_per_slot": 10,
-      "launcher_capacity": 1
+      "launcher_capacity": 1,
+      "footprint": [4, 6]
     },
     {
       "id": "launch_pad",
@@ -47,7 +50,9 @@
       "refurb_days": 4,
       "refurb_cost": 5000,
       "refurb_days_after_failure": 12,
-      "refurb_cost_after_failure": 20000
+      "refurb_cost_after_failure": 20000,
+      "footprint": [4, 4],
+      "safety_radius_cells": 5
     },
     {
       "id": "composite_shop",
@@ -58,7 +63,8 @@
       "build_days": 8,
       "max_count": 1,
       "slots": 2,
-      "productivity_per_slot": 10
+      "productivity_per_slot": 10,
+      "footprint": [3, 3]
     },
     {
       "id": "electronics_lab",
@@ -69,7 +75,8 @@
       "build_days": 12,
       "max_count": 1,
       "slots": 2,
-      "productivity_per_slot": 10
+      "productivity_per_slot": 10,
+      "footprint": [3, 2]
     },
     {
       "id": "machine_shop",
@@ -80,7 +87,8 @@
       "build_days": 14,
       "max_count": 1,
       "slots": 3,
-      "productivity_per_slot": 10
+      "productivity_per_slot": 10,
+      "footprint": [4, 3]
     },
     {
       "id": "engine_shop",
@@ -92,7 +100,8 @@
       "max_count": 1,
       "slots": 4,
       "productivity_per_slot": 10,
-      "requires_facilities": ["machine_shop"]
+      "requires_facilities": ["machine_shop"],
+      "footprint": [5, 4]
     }
   ]
 }
