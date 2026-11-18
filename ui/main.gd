@@ -18,7 +18,6 @@ const REJECT_REASONS := {
 	"missing_prerequisite": "installation prérequise manquante",
 	"max_technicians": "maximum de techniciens atteint",
 	"staff_assigned": "techniciens encore affectés",
-	"unknown_facility": "installation inconnue",
 	"facility_not_ready": "installation pas prête",
 	"no_slots": "aucun poste de travail",
 	"too_many_for_slots": "plus que de postes disponibles",
@@ -48,6 +47,11 @@ const REJECT_REASONS := {
 	"unknown_contract": "contrat inconnu",
 	"already_skipped": "prochaine livraison déjà sautée",
 	"notice_too_short": "préavis trop court pour sauter cette livraison",
+	"facility_busy": "installation occupée (job en cours, lanceur présent ou tir planifié)",
+	"storage_overflow": "le stock dépasserait la capacité restante",
+	"out_of_bounds": "hors des parcelles possédées",
+	"overlap": "emplacement occupé",
+	"unknown_facility": "installation inconnue",
 }
 
 const FAIL_REASONS := {
@@ -69,6 +73,8 @@ var _sel_pad := -1
 var _sel_contract := -1
 var _sel_day := -1
 var _sel_insured := false
+# Contextual panel: demolition awaiting confirmation (facility id, 0 = none).
+var _confirm_demolish := 0
 
 # Supply contract form (UI state only; the quote comes from SimQueries).
 var _sf_entry := 0
@@ -87,12 +93,13 @@ const SCHEDULE_DAYS := 30
 @onready var _contracts_box: VBoxContainer = %ContractsBox
 @onready var _tabs: TabContainer = %Tabs
 @onready var _map: MapView = %Carte
-@onready var _facilities_box: VBoxContainer = %FacilitiesBox
-@onready var _build_box: VBoxContainer = %BuildBox
+@onready var _schedule_box: VBoxContainer = %ScheduleBox
 @onready var _bom_box: VBoxContainer = %BomBox
 @onready var _supply_box: VBoxContainer = %CatalogBox
 @onready var _contract_supply_box: VBoxContainer = %SupplyBox
-@onready var _launch_box: VBoxContainer = %LaunchBox
+@onready var _staff_label: Label = %StaffLabel
+@onready var _hire_button: Button = %HireButton
+@onready var _fire_button: Button = %FireButton
 @onready var _banner: PanelContainer = %Banner
 @onready var _banner_label: Label = %BannerLabel
 @onready var _game_over: Control = %GameOver
@@ -110,8 +117,11 @@ func _ready() -> void:
 	%ContinueButton.pressed.connect(_on_continue)
 	%StartNewButton.pressed.connect(_new_game)
 	_map.command_requested.connect(_send)
-	var titles := [tr("Carte"), tr("Installations"), tr("Construction"), tr("Nomenclature"),
-		tr("Fournisseurs"), tr("Appro."), tr("Contrats"), tr("Lancement")]
+	_map.selection_changed.connect(_on_selection_changed)
+	_hire_button.pressed.connect(func() -> void: _send(Command.hire(1)))
+	_fire_button.pressed.connect(func() -> void: _send(Command.fire(1)))
+	var titles := [tr("Carte"), tr("Nomenclature"), tr("Marché"), tr("Appro."), tr("Contrats"),
+		tr("Échéancier")]
 	for i in titles.size():
 		_tabs.set_tab_title(i, titles[i])
 	var autosave := SaveGame.read(SaveGame.AUTOSAVE_PATH)
@@ -144,6 +154,7 @@ func _attach(new_session: GameSession) -> void:
 	_sel_pad = -1
 	_sel_contract = -1
 	_sel_day = -1
+	_confirm_demolish = 0
 	_log.clear()
 
 
@@ -183,6 +194,7 @@ func _new_game() -> void:
 	_sel_pad = -1
 	_sel_contract = -1
 	_sel_day = -1
+	_confirm_demolish = 0
 	_log.clear()
 	_log_line(tr("Nouvelle partie (seed %d)") % session.state.game_seed, COLOR_DIM)
 	_refresh()
@@ -208,12 +220,12 @@ func _refresh() -> void:
 	_refresh_reputation()
 	_map.refresh()
 	_rebuild(_contracts_box, _build_contracts)
-	_rebuild(_facilities_box, _build_facilities)
-	_rebuild(_build_box, _build_construction)
+	_refresh_staff()
+	_rebuild_panel()
 	_rebuild(_bom_box, _build_bom)
 	_rebuild(_supply_box, _build_supply)
 	_rebuild(_contract_supply_box, _build_supply_contracts)
-	_rebuild(_launch_box, _build_launch)
+	_rebuild(_schedule_box, _build_schedule_tab)
 	_refresh_bankruptcy()
 
 
@@ -299,6 +311,10 @@ func _facility_name(facility_id: int) -> String:
 	return "#%d" % facility_id
 
 
+func _facility_name_of_type(type: String) -> String:
+	return session.data.facilities[type]["name"] if session.data.facilities.has(type) else type
+
+
 func _facility_type_names(types: Array) -> Array:
 	var names: Array = []
 	for type in types:
@@ -313,35 +329,152 @@ func _recipe_name(recipe_id: String) -> String:
 	return tr("Assembler : %s") % String(output["launcher_model"]).to_upper()
 
 
-# --- Installations tab ------------------------------------------------------
+# --- Staff bar and contextual panel -----------------------------------------
 
-func _build_facilities(box: VBoxContainer) -> void:
+func _refresh_staff() -> void:
+	var staff: Dictionary = SimQueries.staff_info(session.state, session.data)
+	_staff_label.text = tr("PERSONNEL : %d embauchés (max %d) · %d affectés · %d libres · salaires %s cr/j") % [
+		staff["hired"], staff["max"], staff["assigned"], staff["free"], _fmt(staff["daily_salaries"])]
+	_hire_button.text = tr("Embaucher (%s cr)") % _fmt(staff["hire_cost"])
+	_fire_button.text = tr("Licencier (%s cr)") % _fmt(staff["fire_cost"])
+	_fire_button.disabled = staff["free"] <= 0
+
+
+func _on_selection_changed(facility_id: int) -> void:
+	_confirm_demolish = 0
+	if facility_id != 0:
+		var facility := _find_facility(facility_id)
+		if not facility.is_empty() and session.data.facilities[facility["type"]].has("safety_radius_cells"):
+			_sel_pad = facility_id
+	_rebuild_panel()
+
+
+func _find_facility(facility_id: int) -> Dictionary:
+	for facility in session.state.facilities:
+		if int(facility["id"]) == facility_id:
+			return facility
+	return {}
+
+
+func _rebuild_panel() -> void:
+	if session == null:
+		return
+	_rebuild(_map.panel_box, _build_facility_panel)
+
+
+func _build_facility_panel(box: VBoxContainer) -> void:
+	var facility := _find_facility(_map.selected_id())
+	if facility.is_empty():
+		return
 	var state := session.state
 	var data := session.data
-	# Staff summary on top: assigning needs free technicians (hired in Construction).
-	var staff: Dictionary = SimQueries.staff_info(state, data)
-	var summary := _row(box)
-	_label(summary, tr("Techniciens : %d embauchés · %d affectés · %d libres") % [
-		staff["hired"], staff["assigned"], staff["free"]],
-		&"WarnLabel" if staff["free"] <= 0 else &"DimLabel")
-	for facility in state.facilities:
-		var info := SimQueries.facility_info(data, facility, state.day)
-		var card := _card(box)
-		var head := _row(card)
-		_label(head, "#%d  %s" % [info["id"], info["name"]], &"HeadingLabel")
-		if info["status"] == "building":
-			_label(head, tr("EN CONSTRUCTION"), &"WarnLabel")
-			_label(card, tr("Prête au jour %d (dans %d j)") % [info["ready_day"], info["days_until_ready"]], &"DimLabel")
-			continue
-		_label(head, tr("PRÊTE"), &"OkLabel")
-		if int(data.facilities[info["type"]].get("storage_capacity", 0)) > 0:
-			_label(card, tr("Entrepôt : %d / %d unités (toutes installations)") % [
-				Simulation.storage_used(state, data), Simulation.storage_capacity(state, data)], &"DimLabel")
+	var def: Dictionary = data.facilities[facility["type"]]
+	var info := SimQueries.facility_info(data, facility, state.day, state)
+	var card := _card(box)
+	var head := _row(card)
+	_label(head, "#%d  %s" % [info["id"], info["name"]], &"HeadingLabel")
+	var close := _button(head, "✕", func() -> void: _map.clear_selection())
+	close.tooltip_text = tr("Fermer le panneau (Échap)")
+	close.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if info["status"] == "building":
+		var moving := bool(facility.get("moving", false))
+		_label(card, tr("EN DÉPLACEMENT : prête au jour %d (dans %d j)") % [info["ready_day"], info["days_until_ready"]] \
+			if moving else tr("EN CONSTRUCTION : prête au jour %d (dans %d j)") % [info["ready_day"], info["days_until_ready"]],
+			&"WarnLabel")
+	else:
+		_label(card, tr("PRÊTE"), &"OkLabel")
+	_build_spatial_lines(card, facility, def)
+	if info["status"] == "ready":
+		if int(def.get("storage_capacity", 0)) > 0:
+			_label(card, tr("Capacité : %d unités · stock global : %d / %d (toutes installations)") % [
+				int(def["storage_capacity"]), Simulation.storage_used(state, data), Simulation.storage_capacity(state, data)])
+			if LayoutRules.rules_on(data):
+				_label(card, tr("Rayon de desserte : %d cases (tracé en bleu sur la carte).") % int(data.layout["service_radius_cells"]), &"DimLabel")
 		if info["slots"] > 0:
+			var nominal := SimQueries.facility_rate(data, facility)
+			_label(card, tr("Cadence : %d pts/j (nominale %d)") % [info["rate"], nominal],
+				&"WarnLabel" if info["rate"] < nominal else &"DimLabel")
 			_build_staff_row(card, info)
 			_build_jobs(card, info)
-		if data.facilities[info["type"]].has("launcher_capacity"):
+		if def.has("launcher_capacity"):
 			_build_hall(card, facility)
+		if def.has("safety_radius_cells"):
+			_build_pad_status(card, facility)
+	_build_move_actions(card, facility)
+	if info["status"] == "ready" and (def.has("launcher_capacity") or def.has("safety_radius_cells")):
+		_build_schedule_form(box)
+
+
+## Spatial facts (spec 008 R5, R6): the sim computes them, the UI words them.
+func _build_spatial_lines(card: VBoxContainer, facility: Dictionary, def: Dictionary) -> void:
+	if not LayoutRules.rules_on(session.data):
+		return
+	var spatial := SimQueries.facility_spatial(session.state, session.data, int(facility["id"]))
+	if def.has("slots") and facility["status"] == "ready":
+		if spatial["served"]:
+			_label(card, tr("Desservie par un entrepôt"), &"OkLabel")
+		else:
+			_label(card, tr("Non desservie : cadence réduite à %d %%") % int(session.data.layout["unserved_productivity_pct"]), &"WarnLabel")
+	if not spatial["in_safety_zone_of"].is_empty():
+		_label(card, tr("Dans la zone du pas n° %s : évacuée les jours de tir") % ", ".join(
+			spatial["in_safety_zone_of"].map(func(id): return str(id))), &"WarnLabel")
+	if spatial["evacuated_today"]:
+		_label(card, tr("Évacuée aujourd'hui"), &"DangerLabel")
+	if spatial["damaged_until_day"] >= 0:
+		_label(card, tr("Endommagée jusqu'au jour %d") % spatial["damaged_until_day"], &"DangerLabel")
+
+
+func _build_pad_status(card: VBoxContainer, facility: Dictionary) -> void:
+	for pad in SimQueries.pad_infos(session.state, session.data):
+		if pad["id"] != facility["id"]:
+			continue
+		match pad["pad_state"]:
+			"free":
+				_label(card, tr("Pas LIBRE"), &"OkLabel")
+			"occupied":
+				var text := tr("OCCUPÉ : %s #%d") % [String(pad["launcher_model"]).to_upper(), pad["launcher_id"]]
+				text += tr(" · tir jour %d") % pad["launch_day"] if pad["launch_id"] >= 0 else tr(" · aucun tir planifié")
+				_label(card, text, &"AccentLabel")
+			"refurbishing":
+				_label(card, tr("EN REMISE EN ÉTAT jusqu'au jour %d (dans %d j)") % [
+					pad["refurb_until_day"], pad["refurb_until_day"] - session.state.day], &"WarnLabel")
+		_label(card, tr("Zone de sécurité : %d cases (pointillés rouges sur la carte).") % \
+			int(session.data.facilities[facility["type"]]["safety_radius_cells"]), &"DimLabel")
+
+
+func _build_move_actions(card: VBoxContainer, facility: Dictionary) -> void:
+	var id := int(facility["id"])
+	var move := SimQueries.move_info(session.state, session.data, id)
+	if _confirm_demolish == id:
+		_label(card, tr("Démolir #%d ? Remboursement : %s cr. Définitif.") % [id, _fmt(move["refund"])], &"DangerLabel")
+		var confirm_row := card
+		_button(confirm_row, tr("Confirmer la démolition"), func() -> void:
+			_confirm_demolish = 0
+			_map.clear_selection()
+			_send(Command.demolish_facility(id)))
+		_button(confirm_row, tr("Garder"), func() -> void:
+			_confirm_demolish = 0
+			_rebuild_panel())
+		return
+	var blocked := ""
+	if move["busy"]:
+		blocked = tr("Installation occupée : job démarré, lanceur présent ou tir planifié.")
+	elif move["storage_excess"] > 0:
+		blocked = tr("Le stock dépasserait la capacité restante (%d unités en trop).") % move["storage_excess"]
+	var move_button := _button(card, tr("Déplacer : %s cr · %d j") % [_fmt(move["move_cost"]), move["move_days"]],
+		func() -> void: _map.start_move(id), blocked != "" or not move["can_afford_move"])
+	var demolish := _button(card, tr("Démolir : +%s cr") % _fmt(move["refund"]),
+		func() -> void:
+			_confirm_demolish = id
+			_rebuild_panel(), blocked != "")
+	for button in [move_button, demolish]:
+		button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	if blocked != "":
+		move_button.tooltip_text = blocked
+		demolish.tooltip_text = blocked
+		_label(card, blocked, &"DimLabel")
+	elif not move["can_afford_move"]:
+		move_button.tooltip_text = tr("Fonds insuffisants.")
 
 
 func _build_staff_row(card: VBoxContainer, info: Dictionary) -> void:
@@ -359,7 +492,7 @@ func _build_staff_row(card: VBoxContainer, info: Dictionary) -> void:
 		# Playtest feedback: a greyed "+" with no explanation was a dead end.
 		plus.tooltip_text = tr("Aucun technicien libre : embauchez-en, ou retirez-en d'une autre installation.")
 		var can_hire: bool = staff["hired"] < staff["max"] and session.state.money >= staff["hire_cost"]
-		_button(row, tr("Embaucher 1 (%s cr)") % _fmt(staff["hire_cost"]),
+		_button(card, tr("Embaucher 1 (%s cr)") % _fmt(staff["hire_cost"]),
 			func() -> void: _send(Command.hire(1)), not can_hire)
 
 
@@ -390,9 +523,8 @@ func _build_jobs(card: VBoxContainer, info: Dictionary) -> void:
 				status = tr("bloqué : %s") % tr(BLOCK_REASONS.get(job["blocked"], job["blocked"]))
 			_label(row, status, &"WarnLabel" if job["blocked"] != "" else &"DimLabel")
 			_button(row, tr("Annuler"), func() -> void: _send(Command.cancel_job(job["id"])))
-	var add_row := _row(card)
 	for recipe_id in info["recipes"]:
-		_button(add_row, "+ " + _recipe_name(recipe_id),
+		_button(card, "+ " + _recipe_name(recipe_id),
 			func() -> void: _send(Command.queue_job(info["id"], recipe_id, 1)))
 	for recipe_id in info["recipes"]:
 		var scrap := SimQueries.scrap_info(session.state, session.data, recipe_id)
@@ -417,46 +549,6 @@ func _build_hall(card: VBoxContainer, facility: Dictionary) -> void:
 	_label(card, tr("Hall : %d / %d lanceur(s)") % [occupancy["used"], occupancy["capacity"]], &"DimLabel")
 	for launcher in SimQueries.launchers_in(session.state, facility["id"]):
 		_label(card, "▮ %s #%d" % [String(launcher["model"]).to_upper(), launcher["id"]], &"OkLabel")
-
-
-# --- Construction & staff tab -----------------------------------------------
-
-func _build_construction(box: VBoxContainer) -> void:
-	var card := _card(box)
-	_label(card, tr("CONSTRUIRE"), &"HeadingLabel")
-	for option in SimQueries.build_options(session.state, session.data):
-		var row := _row(card)
-		var info := VBoxContainer.new()
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(info)
-		_label(info, tr("%s : %s cr · %d j · entretien %s cr/j · %d restant(s)") % [
-			option["name"], _fmt(option["cost"]), option["days"], _fmt(option["upkeep"]), option["remaining"]])
-		var blocked_by: Array = []
-		for req in option["requires"]:
-			var state_text := tr("prêt") if req["ready"] else tr("manquant")
-			blocked_by.append("%s (%s)" % [req["name"], state_text])
-		if not blocked_by.is_empty():
-			_label(info, tr("Nécessite : %s") % ", ".join(blocked_by),
-				&"WarnLabel" if not option["missing"].is_empty() else &"DimLabel")
-		var button := _button(row, tr("Construire"), func() -> void: _send(Command.build(option["type"])),
-			option["remaining"] <= 0 or not option["missing"].is_empty())
-		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		if option["remaining"] <= 0:
-			button.tooltip_text = tr("Nombre maximum atteint.")
-		elif not option["missing"].is_empty():
-			button.tooltip_text = tr("Construisez d'abord : %s") % ", ".join(_facility_type_names(option["missing"]))
-
-	var staff := SimQueries.staff_info(session.state, session.data)
-	var staff_card := _card(box)
-	_label(staff_card, tr("PERSONNEL"), &"HeadingLabel")
-	_label(staff_card, tr("Techniciens : %d embauchés (max %d) · %d affectés · %d libres") % [
-		staff["hired"], staff["max"], staff["assigned"], staff["free"]])
-	_label(staff_card, tr("Salaires : %s cr/j"
-		) % _fmt(staff["daily_salaries"]), &"DimLabel")
-	var row := _row(staff_card)
-	_button(row, tr("Embaucher (%s cr)") % _fmt(staff["hire_cost"]), func() -> void: _send(Command.hire(1)))
-	_button(row, tr("Licencier (%s cr)") % _fmt(staff["fire_cost"]), func() -> void: _send(Command.fire(1)),
-		staff["free"] <= 0)
 
 
 # --- Bill of materials tab --------------------------------------------------
@@ -736,7 +828,6 @@ func _bind_order(button: Button, spin: SpinBox, room: Label, supplier_id: String
 func _build_supply_contracts(box: VBoxContainer) -> void:
 	_build_contract_form(box)
 	_build_supply_contract_list(box)
-	_build_schedule_card(box)
 
 
 ## Catalog entries that accept supply contracts: [{supplier_id, component_id, label, terms}].
@@ -1079,50 +1170,10 @@ func _build_history_grid(card: VBoxContainer, history: Array) -> void:
 
 # --- Launch tab ---------------------------------------------------------------
 
-func _build_launch(box: VBoxContainer) -> void:
-	_build_pads_card(box)
-	_build_ready_card(box)
-	_build_schedule_form(box)
+## Global schedule panel: launch calendar and supply/cash projection (spec 008).
+func _build_schedule_tab(box: VBoxContainer) -> void:
 	_build_scheduled_card(box)
-
-
-func _build_pads_card(box: VBoxContainer) -> void:
-	var card := _card(box)
-	_label(card, tr("PAS DE TIR"), &"HeadingLabel")
-	var pads := SimQueries.pad_infos(session.state, session.data)
-	if pads.is_empty():
-		_label(card, tr("(aucun pas de tir)"), &"DimLabel")
-	for pad in pads:
-		var row := _row(card)
-		_label(row, "#%d  %s" % [pad["id"], pad["name"]])
-		if pad["status"] == "building":
-			_label(row, tr("EN CONSTRUCTION : prêt au jour %d") % pad["ready_day"], &"WarnLabel")
-			continue
-		match pad["pad_state"]:
-			"free":
-				_label(row, tr("LIBRE"), &"OkLabel")
-			"occupied":
-				var text := tr("OCCUPÉ : %s #%d") % [String(pad["launcher_model"]).to_upper(), pad["launcher_id"]]
-				if pad["launch_id"] >= 0:
-					text += tr(" · tir jour %d") % pad["launch_day"]
-				else:
-					text += tr(" · aucun tir planifié")
-				_label(row, text, &"AccentLabel")
-			"refurbishing":
-				_label(row, tr("REMISE EN ÉTAT jusqu'au jour %d (dans %d j)") % [
-					pad["refurb_until_day"], pad["refurb_until_day"] - session.state.day], &"WarnLabel")
-
-
-func _build_ready_card(box: VBoxContainer) -> void:
-	var card := _card(box)
-	_label(card, tr("LANCEURS PRÊTS"), &"HeadingLabel")
-	var ready := SimQueries.ready_launchers(session.state, session.data)
-	if ready.is_empty():
-		_label(card, tr("(aucun lanceur prêt : assemblez-en un dans le hall)"), &"DimLabel")
-	for launcher in ready:
-		var row := _row(card)
-		_label(row, "▮ %s #%d" % [String(launcher["model"]).to_upper(), launcher["id"]], &"OkLabel")
-		_label(row, tr("%s · fiabilité %d %%") % [launcher["location_name"], roundi(launcher["reliability"] * 100)], &"DimLabel")
+	_build_schedule_card(box)
 
 
 func _build_schedule_form(box: VBoxContainer) -> void:
@@ -1152,7 +1203,7 @@ func _build_schedule_form(box: VBoxContainer) -> void:
 		_sel_pad = -1
 		_sel_contract = -1
 		_sel_day = -1
-		_rebuild(_launch_box, _build_launch))
+		_rebuild_panel())
 	launcher_row.add_child(launcher_menu)
 
 	var pad_options := SimQueries.launch_pad_options(state, session.data, _sel_launcher)
@@ -1262,13 +1313,13 @@ func _option_row(card: VBoxContainer, title: String, options: Array, selected: i
 	menu.item_selected.connect(func(index: int) -> void:
 		on_select.call(menu.get_item_id(index))
 		_sel_day = -1
-		_rebuild(_launch_box, _build_launch))
+		_rebuild_panel())
 	row.add_child(menu)
 
 
 func _shift_day(delta: int) -> void:
 	_sel_day += delta
-	_rebuild(_launch_box, _build_launch)
+	_rebuild_panel()
 
 
 func _build_scheduled_card(box: VBoxContainer) -> void:
@@ -1396,6 +1447,12 @@ func _log_event(e: Dictionary) -> void:
 				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)
 		"lot_bought":
 			_log_line(tr("Parcelle achetée : %s (-%s cr)") % [e["lot_id"], _fmt(e["cost"])], COLOR_ACCENT)
+		"facility_move_started":
+			_log_line(tr("Déplacement : %s (-%s cr), prête au jour %d") % [
+				_facility_name(e["facility_id"]), _fmt(e["cost"]), e["ready_day"]], COLOR_ACCENT)
+		"facility_demolished":
+			_log_line(tr("Démolition : %s (+%s cr)") % [
+				_facility_name_of_type(e["facility_type"]), _fmt(e["refund"])], COLOR_ACCENT)
 		"facility_built":
 			_log_line(tr("Installation prête : %s") % _facility_name(e["facility_id"]), COLOR_OK)
 		"staff_hired":

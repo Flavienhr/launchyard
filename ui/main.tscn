@@ -92,6 +92,26 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "0 cr"
 
+[node name="StaffBar" type="HBoxContainer" parent="Margin/Root"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StaffLabel" type="Label" parent="Margin/Root/StaffBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"DimLabel"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="HireButton" type="Button" parent="Margin/Root/StaffBar"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="FireButton" type="Button" parent="Margin/Root/StaffBar"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="Banner" type="PanelContainer" parent="Margin/Root"]
 unique_name_in_owner = true
 visible = false
@@ -116,26 +136,6 @@ size_flags_horizontal = 3
 [node name="Carte" parent="Margin/Root/Body/Tabs" instance=ExtResource("3_map")]
 unique_name_in_owner = true
 layout_mode = 2
-
-[node name="Installations" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
-layout_mode = 2
-horizontal_scroll_mode = 3
-
-[node name="FacilitiesBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Installations"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
-
-[node name="Construction" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
-layout_mode = 2
-horizontal_scroll_mode = 3
-
-[node name="BuildBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Construction"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
 
 [node name="Nomenclature" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
@@ -177,11 +177,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Lancement" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
+[node name="Echeancier" type="ScrollContainer" parent="Margin/Root/Body/Tabs"]
 layout_mode = 2
 horizontal_scroll_mode = 3
 
-[node name="LaunchBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Lancement"]
+[node name="ScheduleBox" type="VBoxContainer" parent="Margin/Root/Body/Tabs/Echeancier"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

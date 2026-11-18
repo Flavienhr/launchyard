@@ -20,6 +20,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_canvas")
 
+[node name="PanelHost" type="PanelContainer" parent="Body"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
+
+[node name="PanelScroll" type="ScrollContainer" parent="Body/PanelHost"]
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="PanelBox" type="VBoxContainer" parent="Body/PanelHost/PanelScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
 [node name="StatusBar" type="HBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 8
@@ -43,6 +59,7 @@ layout_mode = 2
 text = "ZOOM ×1 (Z)"
 
 [node name="BuildBar" type="ScrollContainer" parent="Body"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(176, 0)
 layout_mode = 2
 horizontal_scroll_mode = 0

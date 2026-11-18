@@ -466,3 +466,99 @@ func test_map_facilities_positions_and_status() -> void:
 func test_map_facilities_empty_without_map() -> void:
 	var s := _state()
 	assert_eq(SimQueries.map_facilities(s[0], s[1]).size(), 0)
+
+
+# --- Spec 008, UI part B: zones, move/demolish info, effective rate ------------
+
+func _zoned_state() -> Array:
+	var data := F.data()
+	data.sites[F.SITE_ID]["map"] = {"width": 20, "height": 10, "terrain": [],
+		"lots": [{"id": "A", "x": 0, "y": 0, "w": 20, "h": 10, "price": 0}]}
+	data.layout = {"service_radius_cells": 1, "unserved_productivity_pct": 50,
+		"rollout_base_days": 1, "rollout_cells_per_day": 3, "rollout_cost_per_cell": 10,
+		"damage_repair_days": 5, "damage_repair_cost_pct": 25, "move_cost_pct": 25,
+		"move_days_pct": 50, "demolish_refund_pct": 20}
+	data.facilities["warehouse"].merge({"footprint": [2, 2], "upkeep_per_day": 0, "build_cost": 100}, true)
+	data.facilities["shop"].merge({"footprint": [3, 1], "slots": 2, "upkeep_per_day": 0,
+		"build_cost": 1_000, "build_days": 3, "max_count": 2}, true)
+	data.facilities["hall"].merge({"footprint": [2, 2], "upkeep_per_day": 0}, true)
+	data.facilities["pad"] = {"id": "pad", "name": "Pad", "upkeep_per_day": 0, "footprint": [2, 2],
+		"safety_radius_cells": 2, "buildable": true, "build_cost": 4_000, "build_days": 4, "max_count": 3,
+		"rollout_days": 2, "scrub_recycle_days": 5, "scrub_cost": 0, "refurb_days": 1,
+		"refurb_cost": 0, "refurb_days_after_failure": 6, "refurb_cost_after_failure": 300}
+	data.start = {"money": F.START_MONEY, "technicians": 2, "site": F.SITE_ID, "owned_lots": ["A"],
+		"facilities": [{"facility_type": "pad", "x": 6, "y": 0, "rotation": 0},
+			{"facility_type": "warehouse", "x": 0, "y": 0, "rotation": 0},
+			{"facility_type": "shop", "x": 12, "y": 5, "rotation": 0}],
+		"assignments": {"shop": 2}}
+	return [Simulation.new_game(data, 1), data]
+
+
+func test_map_zones_and_ghost_zone() -> void:
+	var s := _zoned_state()
+	var zones := SimQueries.map_zones(s[0], s[1])
+	# Pad 2x2 at (6,0), radius 2: free cells < 2, so one cell of margin on each side.
+	assert_eq(zones["safety"].size(), 1)
+	assert_eq(zones["safety"][0]["rect"], {"x": 5, "y": -1, "w": 4, "h": 4})
+	# Warehouse 2x2 at (0,0), service radius 1 (gap <= 1): margin 1.
+	assert_eq(zones["service"][0]["rect"], {"x": -1, "y": -1, "w": 4, "h": 4})
+	assert_eq(SimQueries.safety_zone_rect(s[1], "pad", {"x": 10, "y": 4, "w": 2, "h": 2}),
+		{"x": 9, "y": 3, "w": 4, "h": 4})
+	assert_eq(SimQueries.safety_zone_rect(s[1], "shop", {"x": 0, "y": 0, "w": 3, "h": 1}), {})
+
+
+func test_map_facilities_spatial_flags() -> void:
+	var s := _zoned_state()
+	var shop := _fac(s[0], "shop")
+	var info: Dictionary = SimQueries.map_facilities(s[0], s[1]).filter(func(f): return f["id"] == shop["id"])[0]
+	assert_eq(info["served"], false)
+	assert_eq(info["damaged_until_day"], -1)
+	assert_eq(info["evacuated_today"], false)
+
+
+func test_effective_rate_includes_unserved_penalty() -> void:
+	var s := _zoned_state()
+	var shop := _fac(s[0], "shop")
+	var base := SimQueries.facility_rate(s[1], shop)
+	assert_true(base > 0)
+	# Shop at (12,5) is far from the warehouse: 50 % of the base rate.
+	assert_eq(SimQueries.effective_rate(s[0], s[1], shop), base / 2)
+	assert_eq(SimQueries.facility_info(s[1], shop, 1, s[0])["rate"], base / 2)
+	assert_eq(SimQueries.facility_info(s[1], shop, 1)["rate"], base)
+	assert_eq(SimQueries.effective_rate(s[0], s[1], _fac(s[0], "warehouse")), 0)
+
+
+func test_move_check_ignores_own_position_and_rollouts() -> void:
+	var s := _zoned_state()
+	var shop := _fac(s[0], "shop")
+	# Shifting by one cell overlaps the old position: valid for a move, invalid for a build.
+	var moved := SimQueries.move_check(s[0], s[1], shop["id"], 13, 5, 0)
+	assert_eq(moved["valid"], true)
+	assert_eq(SimQueries.placement_check(s[0], s[1], "shop", 13, 5, 0)["valid"], false)
+	assert_eq(SimQueries.placement_check(s[0], s[1], "shop", 12, 5, 0)["valid"], false)
+	assert_eq(SimQueries.move_check(s[0], s[1], shop["id"], 12, 5, 0)["valid"], true)
+	assert_eq(SimQueries.move_check(s[0], s[1], shop["id"], 19, 5, 0)["reason"], "out_of_bounds")
+	# A pad placed 4 cells from the hall (hall at 0,0? none here): rows follow the halls.
+	var rows := SimQueries.placement_rollouts(s[0], s[1], "pad", {"x": 10, "y": 8, "w": 2, "h": 2})
+	assert_eq(rows.size(), 0)
+	assert_eq(SimQueries.placement_rollouts(s[0], s[1], "shop", {"x": 10, "y": 8, "w": 3, "h": 1}).size(), 0)
+
+
+func test_move_info_matches_the_commands() -> void:
+	var s := _zoned_state()
+	var shop := _fac(s[0], "shop")
+	var info := SimQueries.move_info(s[0], s[1], shop["id"])
+	assert_eq(info["move_cost"], 250)
+	# Same arithmetic as FacilityMoves (it truncates instead of rounding up: 1.5 -> 1).
+	assert_eq(info["move_days"], 1)
+	assert_eq(info["refund"], 200)
+	assert_eq(info["busy"], false)
+	var money: int = s[0].money
+	var events := Simulation.apply_command(s[0], Command.move_facility(shop["id"], 12, 7, 0), s[1])
+	assert_eq(F.types(events), ["facility_move_started"])
+	assert_eq(money - s[0].money, info["move_cost"])
+	assert_eq(shop["ready_day"] - s[0].day, info["move_days"])
+	money = s[0].money
+	Simulation.apply_command(s[0], Command.demolish_facility(shop["id"]), s[1])
+	assert_eq(s[0].money - money, info["refund"])
+	assert_eq(SimQueries.move_info(s[0], s[1], shop["id"])["exists"], false)

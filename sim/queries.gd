@@ -24,7 +24,8 @@ static func facility_spatial(state: GameState, data: GameData, facility_id: int)
 
 
 ## Positioned facilities for the map: [{id, type, name, status, ready_day, rect,
-## launchers: [model ids standing on the pad or stored in the hall], job_blocked}].
+## launchers: [model ids standing on the pad or stored in the hall], job_blocked,
+## served, in_safety_zone_of, damaged_until_day (-1 = not damaged), evacuated_today}].
 ## Instances without a position (site without map) are skipped.
 static func map_facilities(state: GameState, data: GameData) -> Array:
 	var out: Array = []
@@ -42,13 +43,144 @@ static func map_facilities(state: GameState, data: GameData) -> Array:
 		for job in facility["jobs"]:
 			if String(job["blocked"]) != "":
 				blocked = true
+		var spatial := LayoutRules.facility_spatial(state, data, int(facility["id"]))
 		out.append({
 			"id": int(facility["id"]), "type": facility["type"],
 			"name": data.facilities[facility["type"]]["name"],
 			"status": facility["status"], "ready_day": int(facility["ready_day"]),
 			"rect": rect, "launchers": models, "job_blocked": blocked,
+			"served": spatial["served"], "in_safety_zone_of": spatial["in_safety_zone_of"],
+			"damaged_until_day": spatial["damaged_until_day"],
+			"evacuated_today": spatial["evacuated_today"],
 		})
 	return out
+
+
+## Cell rectangle (inclusive bounds, may exceed the map) covered by a safety zone
+## of `radius` cells around `rect` (R5: free cells between < radius).
+static func _grown(rect: Dictionary, margin: int) -> Dictionary:
+	return {"x": int(rect["x"]) - margin, "y": int(rect["y"]) - margin,
+		"w": int(rect["w"]) + 2 * margin, "h": int(rect["h"]) + 2 * margin}
+
+
+## Safety zone drawn around a pad type placed at `rect` ({} if the type has none
+## or the site has no distance rules).
+static func safety_zone_rect(data: GameData, facility_type: String, rect: Dictionary) -> Dictionary:
+	var def: Dictionary = data.facilities.get(facility_type, {})
+	if not LayoutRules.rules_on(data) or not def.has("safety_radius_cells") or rect.is_empty():
+		return {}
+	return _grown(rect, maxi(0, int(def["safety_radius_cells"]) - 1))
+
+
+## Zones of the placed instances for the map (R5, R6): {safety: [{pad_id, status,
+## rect, fires_today}], service: [{facility_id, rect}]}. service lists the ready,
+## undamaged storage facilities (those that serve workshops). Empty without rules.
+static func map_zones(state: GameState, data: GameData) -> Dictionary:
+	var out := {"safety": [], "service": []}
+	if not LayoutRules.rules_on(data):
+		return out
+	for facility in state.facilities:
+		var rect := LayoutRules.instance_rect(data, facility)
+		if rect.is_empty():
+			continue
+		var def: Dictionary = data.facilities[facility["type"]]
+		if def.has("safety_radius_cells"):
+			out["safety"].append({"pad_id": int(facility["id"]), "status": facility["status"],
+				"rect": safety_zone_rect(data, facility["type"], rect),
+				"fires_today": LayoutRules.pad_fires_today(state, int(facility["id"]))})
+		if def.has("storage_capacity") and facility["status"] == "ready" \
+				and not LayoutRules.is_damaged(state, facility):
+			out["service"].append({"facility_id": int(facility["id"]),
+				"rect": _grown(rect, int(data.layout["service_radius_cells"]))})
+	return out
+
+
+## What moving or demolishing an instance costs, for display (spec 008 R8, same
+## formulas as FacilityMoves): {exists, busy, storage_excess, move_cost, move_days,
+## refund, can_afford_move}.
+static func move_info(state: GameState, data: GameData, facility_id: int) -> Dictionary:
+	for facility in state.facilities:
+		if int(facility["id"]) != facility_id:
+			continue
+		var def: Dictionary = data.facilities[facility["type"]]
+		var cost: int = int(def.get("build_cost", 0)) * int(data.layout.get("move_cost_pct", 0)) / 100
+		var scaled: int = int(def.get("build_days", 0)) * int(data.layout.get("move_days_pct", 0))
+		return {
+			"exists": true,
+			"busy": FacilityMoves.is_busy(state, data, facility),
+			"storage_excess": FacilityMoves.storage_excess(state, data, facility),
+			"move_cost": cost,
+			"move_days": maxi(1, -(-scaled / 100)),
+			"refund": int(def.get("build_cost", 0)) * int(data.layout.get("demolish_refund_pct", 0)) / 100,
+			"can_afford_move": cost <= state.money,
+		}
+	return {"exists": false, "busy": false, "storage_excess": 0, "move_cost": 0, "move_days": 0,
+		"refund": 0, "can_afford_move": false}
+
+
+## Placement check of an existing instance moved to (x, y, rotation) (R8): like
+## placement_check, but the instance does not collide with its own old position.
+## {valid, reason, rect[, facility_id, in_safety_zone_of, served]}.
+static func move_check(state: GameState, data: GameData, facility_id: int,
+		x: int, y: int, rotation: int) -> Dictionary:
+	var facility := {}
+	for candidate in state.facilities:
+		if int(candidate["id"]) == facility_id:
+			facility = candidate
+	if facility.is_empty() or not data.has_map() or rotation < 0 or rotation > 1:
+		return {"valid": false, "reason": LayoutRules.REASON_OUT_OF_BOUNDS, "rect": {}}
+	var rect := LayoutRules.rect_of(data, facility["type"], x, y, rotation)
+	if not LayoutRules.is_buildable(state, data, rect):
+		return {"valid": false, "reason": LayoutRules.REASON_OUT_OF_BOUNDS, "rect": rect}
+	var blocker := LayoutRules.overlapping_facility(state, data, rect, facility_id)
+	if blocker != 0:
+		return {"valid": false, "reason": LayoutRules.REASON_OVERLAP, "rect": rect, "facility_id": blocker}
+	var result := {"valid": true, "reason": "", "rect": rect}
+	if LayoutRules.rules_on(data):
+		result["in_safety_zone_of"] = LayoutRules.zone_pad_ids(state, data, rect, facility_id)
+		result["served"] = not data.facilities[facility["type"]].has("slots") \
+			or LayoutRules.is_served(state, data, rect)
+	return result
+
+
+## Roll-out between halls and pads for a placement (R7): [{pad_id, hall_id,
+## rollout_days, rollout_cost}]. A hall type gets one row per pad (as in
+## placement_check), a pad type one row per hall. Empty for other types.
+static func placement_rollouts(state: GameState, data: GameData, facility_type: String,
+		rect: Dictionary) -> Array:
+	var rows: Array = []
+	var def: Dictionary = data.facilities.get(facility_type, {})
+	if not LayoutRules.rules_on(data) or rect.is_empty():
+		return rows
+	var new_is_hall := def.has("launcher_capacity")
+	var new_is_pad := def.has("safety_radius_cells")
+	if not new_is_hall and not new_is_pad:
+		return rows
+	for facility in state.facilities:
+		var other := LayoutRules.instance_rect(data, facility)
+		if other.is_empty():
+			continue
+		var other_def: Dictionary = data.facilities[facility["type"]]
+		var gap := LayoutRules.gap_cells(rect, other)
+		var row := {"rollout_days": LayoutRules.rollout_days(data, gap),
+			"rollout_cost": LayoutRules.rollout_cost(data, gap)}
+		if new_is_hall and other_def.has("safety_radius_cells"):
+			row["pad_id"] = int(facility["id"])
+			row["hall_id"] = 0
+			rows.append(row)
+		elif new_is_pad and other_def.has("launcher_capacity"):
+			row["pad_id"] = 0
+			row["hall_id"] = int(facility["id"])
+			rows.append(row)
+	return rows
+
+
+## Work points per day of an instance, unserved penalty included (spec 008 R6).
+## Unlike facility_rate, which ignores the position.
+static func effective_rate(state: GameState, data: GameData, facility: Dictionary) -> int:
+	if not data.facilities[facility["type"]].has("slots"):
+		return 0
+	return LayoutRules.work_rate(state, data, facility)
 
 
 ## Throughput (work points per day) of a facility instance.
@@ -60,11 +192,12 @@ static func facility_rate(data: GameData, facility: Dictionary) -> int:
 ## Job state for display: {recipe_id, work_points, progress, percent, started,
 ## blocked, idle, days_left}. days_left is -1 when no progress is possible
 ## (no technician); otherwise the estimate at the current assignment.
-static func job_info(data: GameData, facility: Dictionary, job: Dictionary) -> Dictionary:
+## With `state`, the rate includes the unserved penalty (spec 008 R6).
+static func job_info(data: GameData, facility: Dictionary, job: Dictionary, state: GameState = null) -> Dictionary:
 	var recipe: Dictionary = data.recipes[job["recipe_id"]]
 	var work := int(recipe["work_points"])
 	var progress := int(job["progress"])
-	var rate := facility_rate(data, facility)
+	var rate := facility_rate(data, facility) if state == null else effective_rate(state, data, facility)
 	var days_left := -1
 	if rate > 0:
 		days_left = maxi(1, ceili(float(work - progress) / rate))
@@ -82,11 +215,11 @@ static func job_info(data: GameData, facility: Dictionary, job: Dictionary) -> D
 
 
 ## Summary of a facility instance: slots, assigned, rate, jobs (job_info each).
-static func facility_info(data: GameData, facility: Dictionary, day: int) -> Dictionary:
+static func facility_info(data: GameData, facility: Dictionary, day: int, state: GameState = null) -> Dictionary:
 	var def: Dictionary = data.facilities[facility["type"]]
 	var jobs: Array = []
 	for job in facility["jobs"]:
-		jobs.append(job_info(data, facility, job))
+		jobs.append(job_info(data, facility, job, state))
 	return {
 		"id": facility["id"],
 		"type": facility["type"],
@@ -96,7 +229,7 @@ static func facility_info(data: GameData, facility: Dictionary, day: int) -> Dic
 		"days_until_ready": maxi(0, int(facility["ready_day"]) - day),
 		"slots": int(def.get("slots", 0)),
 		"assigned": int(facility["assigned"]),
-		"rate": facility_rate(data, facility),
+		"rate": facility_rate(data, facility) if state == null else effective_rate(state, data, facility),
 		"jobs": jobs,
 		"recipes": recipes_for(data, facility["type"]),
 	}
