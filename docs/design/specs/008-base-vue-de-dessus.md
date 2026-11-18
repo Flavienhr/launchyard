@@ -119,7 +119,7 @@ Mer à l'est (lancements vers l'est, azimut 90°, cohérent avec la spec 003), r
 | `machine_shop` | [4, 3] | 12 | – |
 | `engine_shop` | [5, 4] | 20 | – |
 | `integration_hall` | [4, 6] | 24 | – |
-| `launch_pad` | [4, 4] | 16 | `safety_radius_cells` 4 ; `rollout_days` (spec 003) reste pour les sites sans carte |
+| `launch_pad` | [4, 4] | 16 | `safety_radius_cells` 5 ; `rollout_days` (spec 003) reste pour les sites sans carte |
 
 ### `layout.json` (nouveau, règles spatiales globales)
 
@@ -149,10 +149,11 @@ Mer à l'est (lancements vers l'est, azimut 90°, cohérent avec la spec 003), r
 - `assignments` reste inchangé (indexé par type, une seule instance de chaque au départ). La spec 009 déplacera ce fichier dans le fichier de niveau.
 
 ### Lecture de la carte de départ (repères pour la conception, pas des tests)
-- Zone du pas de départ : x 18–29, y 6–17. Elle couvre la moitié est de `lot_start` (x 18–27, 104 cases libres).
+- Zone du pas de départ (rayon 5) : x 17–30, y 5–18. Elle couvre la moitié est de `lot_start`.
 - Partie sûre de `lot_start` : x 8–17, soit 120 cases, moins le hall et l'entrepôt : **84 cases libres**, en morceaux (une bande de 4 de large en x 14–17, une de 2 de large en x 8–9, et 4 × 2 au-dessus du hall).
 - Desserte par l'entrepôt de départ : x 7–17, y 11–20 environ. Les cases du haut de `lot_start` (y 6–9) sont en partie non desservies.
-- On peut caser en sécurité, avec desserte : `tank_shop`, `machine_shop` et `composite_shop` dans la bande x 14–17, et `electronics_lab` tourné (2 × 3) en x 8–9. **L'atelier moteurs (5 × 4) ne tient nulle part en zone sûre** : il faut choisir entre la zone, l'absence de desserte, ou `lot_west` (30 000), où il est desservi par l'entrepôt de départ (écart 2).
+- On peut caser en sécurité, avec desserte, `tank_shop` et `machine_shop` (bande x 14–16). **L'atelier moteurs (5 × 4, même tourné) ne tient nulle part en zone sûre et desservie** : il faut choisir entre la zone, l'absence de desserte, ou `lot_west` (30 000), où il est desservi par l'entrepôt de départ (écart 2).
+- *Vérifié par recherche exhaustive des placements (session principale, 2026-11-18). Avec un rayon de 4, l'atelier moteurs tourné tenait en x 14–17 avec la soudure, l'usinage et l'avionique : le dilemme n'existait pas. D'où le rayon de 5.*
 - Roll-out de départ : écart hall ↔ pas = 8, donc 2 jours (comme aujourd'hui) et 3 200 par tir. Un hall placé juste hors de la zone (écart 4) : 1 jour et 1 600.
 - **Impact sur l'équilibrage existant** : environ 16 tirs × 3 200, soit environ 51 000 de moins sur 240 jours pour toutes les stratégies, et un peu plus si un tir échoue près d'ateliers. Il faudra relancer `make balance` et recaler la spec 009.
 
